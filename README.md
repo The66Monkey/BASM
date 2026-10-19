@@ -1,10 +1,10 @@
 # BASM
 
-BASM is a reference architecture and deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
+BASM (Business, Accounting, Storage, Mail) is a reference architecture and deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
 
 ## What BASM is
 
-BASM is not a Linux distribution and not a fork of upstream software. It is an opinionated deployment framework that composes open-source services, uses upstream Docker images, and keeps the operations simple enough for small teams and consultants.
+BASM is an opinionated deployment framework that composes open-source services, uses upstream Docker images, and keeps the operations simple enough for small teams and consultants.
 
 ## Goals
 
@@ -46,3 +46,19 @@ BASM is not a Linux distribution and not a fork of upstream software. It is an o
 ## Security note
 
 Use strong admin passwords, keep SSH access locked down, and point DNS and router forwarding at your public IP before bringing services live.
+
+## License
+
+Software: MIT License
+Documentation: CC BY 4.0
+
+# Attribution
+BASM is provided under the MIT License.
+
+Attribution is not required for use of the software, but is greatly appreciated.
+
+If BASM helps your business, consultancy, or project, please consider mentioning:
+
+"Based on the BASM Framework by ScandinavianHacking"
+
+Website: https://scandinavianhacking.se
