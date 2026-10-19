@@ -1,0 +1,48 @@
+# BASM
+
+BASM is a reference architecture and deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
+
+## What BASM is
+
+BASM is not a Linux distribution and not a fork of upstream software. It is an opinionated deployment framework that composes open-source services, uses upstream Docker images, and keeps the operations simple enough for small teams and consultants.
+
+## Goals
+
+- Use only open-source software
+- Prefer upstream first
+- Keep services modular and understandable
+- Make deployments repeatable on a fresh Debian host
+- Keep operational overhead low for 1-10 users
+- Avoid vendor lock-in
+
+## Included stack
+
+- ERPNext for core business operations
+- Postal for self-hosted mail handling
+- Nextcloud for file sync and collaboration
+- Restic for backups
+- Traefik for TLS and reverse proxying
+- Optional LAMP, WireGuard, Fluxer, Vaultwarden, and Uptime Kuma services
+
+## Repository layout
+
+- install.sh: main installer and configuration wizard
+- uninstall.sh: remove BASM services and data
+- update.sh: pull latest images and refresh the stack
+- config/: environment values and generated defaults
+- modules/: modular installers for optional components
+- templates/: Docker and proxy configuration templates
+- docs/: operations documentation
+- output/: generated deployment summary and logs
+
+## Quick start
+
+1. Clone or copy this project to a fresh Debian server.
+2. Run: sudo ./install.sh
+3. Complete the setup wizard.
+4. Confirm the selected modules.
+5. Review the generated summary under output/installation-summary.txt.
+
+## Security note
+
+Use strong admin passwords, keep SSH access locked down, and point DNS and router forwarding at your public IP before bringing services live.

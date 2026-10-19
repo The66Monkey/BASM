@@ -1,0 +1,63 @@
+entryPoints:
+  web:
+    address: ":${HTTP_PORT}"
+  websecure:
+    address: ":${HTTPS_PORT}"
+
+providers:
+  docker:
+    exposedByDefault: false
+  file:
+    filename: "/etc/traefik/dynamic.yml"
+
+log:
+  level: INFO
+
+api:
+  dashboard: true
+  insecure: true
+
+http:
+  routers:
+    erp:
+      rule: "Host(`${ERP_URL}`)"
+      service: erp-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    mail:
+      rule: "Host(`${MAIL_URL}`)"
+      service: mail-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    cloud:
+      rule: "Host(`${CLOUD_URL}`)"
+      service: cloud-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    erp-service:
+      loadBalancer:
+        servers:
+          - url: "http://erpnext:8080"
+    mail-service:
+      loadBalancer:
+        servers:
+          - url: "http://postal:5000"
+    cloud-service:
+      loadBalancer:
+        servers:
+          - url: "http://nextcloud:80"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ADMIN_EMAIL}"
+      storage: "/etc/traefik/acme.json"
+      tlsChallenge: {}
