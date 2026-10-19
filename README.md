@@ -49,16 +49,8 @@ Use strong admin passwords, keep SSH access locked down, and point DNS and route
 
 ## License
 
-Software: MIT License
-Documentation: CC BY 4.0
+- Software: MIT License — [LICENSE](LICENSE)
+- Documentation: CC BY 4.0 — [LICENSE-docs](LICENSE-docs)
+- Attribution guidance: [ATTRIBUTION.md](ATTRIBUTION.md)
 
-# Attribution
-BASM is provided under the MIT License.
-
-Attribution is not required for use of the software, but is greatly appreciated.
-
-If BASM helps your business, consultancy, or project, please consider mentioning:
-
-"Based on the BASM Framework by ScandinavianHacking"
-
-Website: https://scandinavianhacking.se
+BASM is free to use, adapt, and self-host. If BASM helps your organization or project, a mention of the BASM Framework by ScandinavianHacking is appreciated.

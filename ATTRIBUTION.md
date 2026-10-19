@@ -1,13 +1,13 @@
 # Attribution
 
-BASM is provided under the MIT License.
+The BASM software is licensed under the MIT License. The project documentation is licensed under CC BY 4.0.
 
-Attribution is not required for use of the software, but is greatly appreciated.
+Attribution is optional for the software, but it is appreciated when BASM supports a business, consultancy, or project.
 
-If BASM helps your business, consultancy, or project, please consider mentioning:
+Suggested attribution:
 
 "Based on the BASM Framework by ScandinavianHacking"
 
 Website: https://scandinavianhacking.se
 
-Documentation for BASM is licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0).
+See [LICENSE](LICENSE) and [LICENSE-docs](LICENSE-docs) for the full legal text.

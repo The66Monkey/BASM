@@ -1,5 +1,11 @@
 version: "3.9"
 
+# Upstream references:
+# - Postal installation guide: https://docs.postalserver.io/getting-started/installation
+# - Postal repo: https://github.com/postalserver
+# - ERPNext upstream: https://github.com/frappe/erpnext
+# - ERPNext Docker deployment repo: https://github.com/frappe/frappe_docker
+
 services:
   traefik:
     image: traefik:v3.1
@@ -32,6 +38,9 @@ services:
       - ${BASM_ROOT}/data/erpnext:/home/frappe/frappe-bench/sites
     networks:
       - basm-net
+    # Follow upstream ERPNext deployment guidance from:
+    # https://github.com/frappe/erpnext
+    # https://github.com/frappe/frappe_docker
 
   postal:
     image: ghcr.io/postalserver/postal:latest
@@ -41,6 +50,9 @@ services:
       POSTAL_HOSTNAME: ${MAIL_URL}
     networks:
       - basm-net
+    # Follow upstream Postal installation guidance from:
+    # https://docs.postalserver.io/getting-started/installation
+    # https://github.com/postalserver
 
   nextcloud:
     image: nextcloud:latest

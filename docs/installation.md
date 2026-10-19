@@ -31,6 +31,15 @@ The installer does the following:
 - Deploys the selected modules
 - Creates the post-installation summary
 
+## Upstream project references
+
+The BASM stack intentionally uses upstream projects and their official install guidance:
+
+- Postal: https://docs.postalserver.io/getting-started/installation
+- Postal repo: https://github.com/postalserver
+- ERPNext upstream: https://github.com/frappe/erpnext
+- ERPNext Docker repo: https://github.com/frappe/frappe_docker
+
 ## Common maintenance
 
 - Use update.sh to pull new images and recreate services
