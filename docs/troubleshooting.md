@@ -14,6 +14,8 @@ Review the stack and logs:
 
 - docker compose -f /opt/basm/docker-compose.yml config
 - docker compose -f /opt/basm/docker-compose.yml logs
+- docker compose -f /opt/basm/docker-compose.yml ps
+- docker compose -f /opt/basm/docker-compose.yml logs erpnext-create-site postal-initialize
 
 ## Port already in use
 
@@ -30,6 +32,7 @@ The wizard warns before continuing. If a service still fails, check which progra
 
 ## Backup issues
 
-- check the backup directory
-- confirm Restic repository initialization
+- check `/var/backups/basm/restic` or `/opt/basm-local/backups/restic`
+- verify snapshots with `docker compose exec restic-backup restic snapshots`
+- confirm the database dump files exist under `/opt/basm/data/db-backups`
 - validate that the backup service can read the data paths

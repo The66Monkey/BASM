@@ -43,9 +43,9 @@ BASM is an opinionated deployment framework that composes open-source services, 
 4. Confirm the selected modules.
 5. Review the generated summary under output/installation-summary.txt.
 
-The wizard offers standard ports (HTTP 80 / HTTPS 443), a local test range,
-or advanced custom ports after module selection. Selected ports are saved and
-propagate to Compose mappings, module configs, and summary URLs. See
+The wizard offers standard ports (HTTP 80 / HTTPS 443 / SMTP 25), a local test
+range, or advanced custom ports after module selection. Selected ports are saved
+and propagated to Compose mappings, module configs, and summary URLs. See
 [port setup](docs/installation.md#port-setup) for the complete port table.
 
 ## Local and LAN testing
@@ -62,10 +62,12 @@ To allow LAN clients, enter the server's private IPv4 address (for example,
 Wildcard and public bindings are rejected. Do not forward these ports on a router.
 
 Local mode keeps separate configuration, container names, and data under
-`/opt/basm-local`. It does not complete the existing upstream ERPNext/Postal
-provisioning or turn placeholder modules into working applications.
-See [local installation details](docs/installation.md#local-and-lan-testing)
-for LAN hostname mappings, module behavior, and maintenance commands.
+`/opt/basm-local`. It initializes ERPNext, Nextcloud, and Postal's web interface
+with generated credentials, and runs encrypted daily Restic backups. Credentials
+are stored in `/opt/basm-local/config/basm.env` with root-only permissions. Local
+Postal SMTP binds only to loopback; it is not an internet mail server. See
+[local installation details](docs/installation.md#local-and-lan-testing)
+for service access, LAN hostname mappings, and mail limitations.
 
 ## Security note
 
@@ -78,3 +80,37 @@ Use strong admin passwords, keep SSH access locked down, and point DNS and route
 - Attribution guidance: [ATTRIBUTION.md](ATTRIBUTION.md)
 
 BASM is free to use, adapt, and self-host. If BASM helps your organization or project, a mention of the BASM Framework by ScandinavianHacking is appreciated.
+
+## Implementation Details
+
+The core profile is provisioned as a complete Compose stack rather than a set of
+placeholder containers. ERPNext uses the official Frappe service topology
+(MariaDB, Redis, configurator, one-shot site creation, backend, frontend,
+websocket, scheduler, and worker). Site creation is safe to rerun, and the
+scheduler is explicitly enabled. Nextcloud is preconfigured with MariaDB, Redis,
+and a generated administrator account, so its browser setup wizard is not needed.
+
+Postal follows its current v3 deployment model: MariaDB, a one-shot schema
+initializer, web, SMTP, and worker services. It does not use RabbitMQ. Its web
+port is private to the Compose network and proxied by Traefik. The Postal web
+process binds to the container network interface so the proxy can reach it;
+local SMTP is published only on `127.0.0.1:2525`. Production SMTP uses TCP 25,
+but real mail delivery still depends on public DNS and provider network policy.
+
+On first install, generated service credentials and deployment values are stored
+outside the repository at `<BASM_ROOT>/config/basm.env` with mode `0600`; the
+summary lists account names but does not print passwords. Postal's mounted config
+and signing key are readable by Postal's non-root container account and are not
+world-readable. The wizard also asks for the Nextcloud admin name and backup
+destination, validates hostnames and time zones, and warns when production DNS,
+host sizing, or SMTP port prerequisites are not met.
+
+The backup path is executable, : MariaDB databases are
+dumped daily, then Restic encrypts application data, configuration, and dumps.
+Retention is seven daily, four weekly, and twelve monthly snapshots. The default
+repository is local to the host, so an off-host copy is still required for
+disaster recovery.
+
+The installer and maintenance scripts are executable directly from the checkout.
+Optional LAMP, Uptime Kuma, and WireGuard modules remain opt-in; Fluxer and
+Vaultwarden are placeholders and are not included in the core profile.

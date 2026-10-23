@@ -27,8 +27,10 @@ The installer does the following:
 - Installs Docker and the Docker Compose plugin
 - Installs common requirements and base tooling
 - Creates the BASM directory structure
-- Generates environment values in config/basm.env
-- Deploys the selected modules
+- Generates deployment config and strong service credentials under the BASM data root
+- Initializes the ERPNext site, Nextcloud account, and Postal database/admin user
+- Schedules encrypted daily database and file backups with Restic
+- Deploys the selected optional modules
 - Creates the post-installation summary
 
 ## Port setup
@@ -42,11 +44,12 @@ chosen bind address, domain, or HTTP/TLS mode.
 | --- | --- | --- |
 | Traefik HTTP (TCP) | 80 | 18080 |
 | Traefik HTTPS (TCP) | 443 | 18443 |
+| Postal SMTP (TCP) | 25 | 2525 (loopback only) |
 | LAMP HTTP (TCP) | 8080 | 18081 |
 | Uptime Kuma HTTP (TCP) | 3001 | 18301 |
 | WireGuard ListenPort (UDP) | 51820 | 18520 |
 
-`custom` prompts for HTTP, HTTPS, and the selected modules' ports. Values must
+`custom` prompts for HTTP, HTTPS, SMTP, and the selected modules' ports. Values must
 be between 1 and 65535. Duplicate TCP mappings, including collisions with the
 recorded host SSH port, are rejected. Existing host listeners produce warnings;
 stop the current owner or choose custom ports before starting a conflicting
@@ -93,7 +96,9 @@ It does not change SSH settings, open firewall rules, or configure your router.
 - Cloud: http://localhost:18080, http://127.0.0.1:18080, or http://cloud.localhost:18080.
 - ERP route: http://erp.localhost:18080.
 - Mail route: http://mail.localhost:18080.
-- Local configuration is generated separately as `config/local.env`.
+- Local configuration and generated passwords are stored under `/opt/basm-local/config/` with mode `0600`.
+- Postal SMTP listens on `127.0.0.1:2525`; local mode cannot deliver internet mail.
+- Restic encrypts daily backups in `/opt/basm-local/backups/restic`.
 - Data and backups default to `/opt/basm-local` and `/opt/basm-local/backups`.
 - Container names use the `basm-local-` prefix to avoid production collisions.
 - The generated summary is `output/local-installation-summary.txt`.
@@ -121,14 +126,18 @@ configuration. Do not configure public DNS or router port forwarding. HTTP is
 unencrypted, so use test credentials and only trusted networks. Binding to a
 private address is not a firewall or a guarantee against upstream NAT forwarding.
 
-### Current service limitations
+### Service readiness
 
-Local mode configures networking for the existing reference stack. The current
-ERPNext and Postal templates still require their upstream databases, initialization,
-and application provisioning before those routes serve working applications.
-Mail delivery is not configured for internet use. Complete Nextcloud's initial
-setup in the browser; its trusted domains include the local names and bind address.
-The existing Restic container is a placeholder, not a configured backup service.
+ERPNext and Nextcloud are initialized with generated administrator credentials.
+The Postal web UI and database are initialized, but local mode cannot validate real
+mail delivery. Production mail requires working public DNS, correct MX/SPF/DKIM/DMARC
+records, a stable IP address, and a provider that permits inbound and outbound TCP
+port 25. Postal's upstream guidance recommends a dedicated host with at least 4 GB
+RAM and 2 CPU cores.
+
+Restic initializes an encrypted local repository and takes daily snapshots of
+application files, configuration, and database dumps. A local repository is not
+an off-host backup; configure an external copy and test restores.
 
 Optional modules retain their existing behavior: LAMP and Uptime Kuma generate
 Compose files but do not start automatically; WireGuard generates a configuration;

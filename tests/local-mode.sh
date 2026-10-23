@@ -18,8 +18,8 @@ set_port_defaults local
 [[ "$HTTP_PORT" == 18080 && "$UPTIME_KUMA_PORT" == 18301 && "$WIREGUARD_PORT" == 18520 ]]
 validate_port_plan
 DEPLOYMENT_MODE=local
-configure_ports < <(printf 'custom\n9000\n9443\n9001\n9301\n51822\n')
-[[ "$HTTP_PORT" == 9000 && "$HTTPS_PORT" == 9443 && "$LAMP_PORT" == 9001 && "$UPTIME_KUMA_PORT" == 9301 && "$WIREGUARD_PORT" == 51822 ]]
+configure_ports < <(printf 'custom\n9000\n9443\n2526\n9001\n9301\n51822\n')
+[[ "$HTTP_PORT" == 9000 && "$HTTPS_PORT" == 9443 && "$SMTP_PORT" == 2526 && "$LAMP_PORT" == 9001 && "$UPTIME_KUMA_PORT" == 9301 && "$WIREGUARD_PORT" == 51822 ]]
 for port in 0 65536 080 abc; do
   if validate_port "$port"; then exit 1; fi
 done
@@ -37,26 +37,51 @@ done
 
 [[ "$(printf 'not-a-port\n8080\n' | prompt_value Port 80 '[[ "$1" =~ ^[0-9]+$ ]]')" == 8080 ]]
 [[ "$(printf 'invalid\nadmin@example.com\n' | prompt_value Email '' 'validate_email "$1"')" == admin@example.com ]]
+validate_admin_username basm-admin
+if validate_admin_username 'invalid user'; then exit 1; fi
+validate_company_name 'Example Business, Inc.'
+if validate_company_name 'Example "Business"'; then exit 1; fi
+validate_timezone Etc/UTC
+if validate_timezone ../etc/passwd; then exit 1; fi
+validate_domain erp.business.example
+if validate_domain 'bad host.example'; then exit 1; fi
+validate_backup_path /var/backups/basm
+if validate_backup_path '../relative'; then exit 1; fi
+if validate_backup_path /var/backups/../tmp; then exit 1; fi
 
 export LOCAL_BASM_ROOT="$TEST_DIR/stack"
+PRODUCTION_BASM_ROOT="$TEST_DIR/production"
 CONFIG_DIR="$TEST_DIR/config"
 OUTPUT_DIR="$TEST_DIR/output"
 BASM_ENV_FILE="$CONFIG_DIR/local.env"
-mkdir -p "$CONFIG_DIR" "$OUTPUT_DIR" "$LOCAL_BASM_ROOT/config"
-printf 'COMPANY_NAME="Production sentinel"\n' > "$CONFIG_DIR/basm.env"
+mkdir -p "$CONFIG_DIR" "$OUTPUT_DIR" "$LOCAL_BASM_ROOT/config" "$PRODUCTION_BASM_ROOT/config"
+printf 'COMPANY_NAME="Production sentinel"\n' > "$PRODUCTION_BASM_ROOT/config/basm.env"
 port_in_use() { return 1; }
 
 for address in 127.0.0.1 192.168.1.50; do
   if [[ "$address" == 127.0.0.1 ]]; then
-    run_wizard < <(printf 'local\n\n\n\n\n2 6\n\n')
+    run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\n')
   else
-    run_wizard < <(printf 'local\n%s\n\n\n\n2 6\n\n' "$address")
+    run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\n' "$address")
   fi
   render_stack
+  render_postal_config
+  [[ "$(stat -c '%a' "$BASM_ENV_FILE")" == 600 ]]
+  [[ "$(stat -c '%a' "$BASM_ROOT/config/postal/postal.yml")" == 640 ]]
+  [[ "$(stat -c '%a' "$BASM_ROOT/config/postal/signing.key")" == 640 ]]
+  grep -Fq 'image: frappe/erpnext:v16.52.1' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'NEXTCLOUD_ADMIN_PASSWORD:' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq '"127.0.0.1:2525:25"' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'restic backup /source/erpnext' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'mariadb-dump --skip-ssl' "$BASM_ROOT/docker-compose.yml"
+  ! grep -Fq "$DB_ROOT_PASSWORD" "$BASM_ROOT/docker-compose.yml"
+  if command -v docker >/dev/null 2>&1; then
+    docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" config -q
+  fi
   [[ "$BIND_ADDRESS" == "$address" ]]
   [[ "$BASM_ROOT" == "$LOCAL_BASM_ROOT" ]]
   [[ "$BACKUP_LOCATION" == "$LOCAL_BASM_ROOT/backups" ]]
-  [[ "$(< "$CONFIG_DIR/basm.env")" == 'COMPANY_NAME="Production sentinel"' ]]
+  [[ "$(< "$PRODUCTION_BASM_ROOT/config/basm.env")" == 'COMPANY_NAME="Production sentinel"' ]]
   grep -Fq "\"$address:18080:80\"" "$BASM_ROOT/docker-compose.yml"
   grep -Fq "\"$address:18443:443\"" "$BASM_ROOT/docker-compose.yml"
   grep -Fq 'container_name: basm-local-traefik' "$BASM_ROOT/docker-compose.yml"
@@ -90,15 +115,14 @@ grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 source "$ROOT_DIR/modules/lamp.sh"
 module_install
 grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
-PRODUCTION_BASM_ROOT="$TEST_DIR/production"
 select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
 [[ "$LOCAL_MODE" == false ]]
 [[ "$PRIMARY_DOMAIN" == business.example ]]
-[[ "$BASM_ENV_FILE" == "$CONFIG_DIR/basm.env" ]]
+[[ "$BASM_ENV_FILE" == "$PRODUCTION_BASM_ROOT/config/basm.env" ]]
 [[ "$BASM_ROOT" == "$PRODUCTION_BASM_ROOT" ]]
 [[ "$COMPANY_NAME" == 'Production sentinel' ]]
 
-run_wizard < <(printf 'local\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n19081\n51825\n19301\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n')
 [[ "$PORT_PROFILE" == custom ]]
 unset HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
 set -a
@@ -119,7 +143,7 @@ grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.tx
 grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
 if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
 
-run_wizard < <(printf 'business.example\n\n\n\n\n\n\n2 3 6\nstandard\n')
+run_wizard < <(printf 'business.example\n\n\n\n\n\n\n\n\n2 3 6\nstandard\n')
 mkdir -p "$BASM_ROOT/config"
 render_stack
 write_summary
@@ -129,7 +153,7 @@ grep -Fq 'https://erp.business.example:443' "$OUTPUT_DIR/installation-summary.tx
 grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 if grep -Eq '^(entryPoints|certificatesResolvers):' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
 port_in_use() { return 1; }
-configure_ports < <(printf 'custom\n19080\n19443\n19081\n51825\n19301\n')
+configure_ports < <(printf 'custom\n19080\n19443\n12525\n19081\n51825\n19301\n')
 render_stack
 write_summary
 grep -Fq 'https://erp.business.example:19443' "$OUTPUT_DIR/installation-summary.txt"

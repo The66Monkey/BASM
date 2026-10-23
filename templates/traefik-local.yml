@@ -19,11 +19,11 @@ http:
     erp-service:
       loadBalancer:
         servers:
-          - url: "http://erpnext:8080"
+          - url: "http://erpnext-frontend:8080"
     mail-service:
       loadBalancer:
         servers:
-          - url: "http://postal:5000"
+          - url: "http://postal-web:5000"
     cloud-service:
       loadBalancer:
         servers:

@@ -1,0 +1,41 @@
+version: 2
+
+postal:
+  web_hostname: "${MAIL_URL}"
+  web_protocol: "${POSTAL_WEB_PROTOCOL}"
+  smtp_hostname: "${MAIL_URL}"
+
+web_server:
+  default_bind_address: "0.0.0.0"
+
+main_db:
+  host: postal-db
+  username: root
+  password: "${POSTAL_DB_PASSWORD}"
+  database: postal
+
+message_db:
+  host: postal-db
+  username: root
+  password: "${POSTAL_DB_PASSWORD}"
+  prefix: postal
+
+smtp_server:
+  default_bind_address: "::"
+
+dns:
+  mx_records:
+    - "mx.${PRIMARY_DOMAIN}"
+  spf_include: "spf.${PRIMARY_DOMAIN}"
+  return_path_domain: "rp.${PRIMARY_DOMAIN}"
+  route_domain: "routes.${PRIMARY_DOMAIN}"
+  track_domain: "track.${PRIMARY_DOMAIN}"
+
+smtp:
+  host: postal-smtp
+  port: 25
+  from_name: "${COMPANY_NAME}"
+  from_address: "postal@${PRIMARY_DOMAIN}"
+
+rails:
+  secret_key: "${POSTAL_RAILS_SECRET}"

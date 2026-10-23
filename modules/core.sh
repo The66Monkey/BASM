@@ -59,8 +59,29 @@ validate_email() {
   [[ "$1" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]
 }
 
+validate_admin_username() {
+  [[ "$1" =~ ^[A-Za-z0-9_.@-]{1,64}$ ]]
+}
+
+validate_company_name() {
+  local pattern="^[A-Za-z0-9][A-Za-z0-9 &,.'()_-]{0,79}$"
+  [[ "$1" =~ $pattern ]]
+}
+
+validate_timezone() {
+  [[ "$1" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ && -f "/usr/share/zoneinfo/$1" ]]
+}
+
+validate_backup_path() {
+  [[ "$1" =~ ^/[A-Za-z0-9_./-]+$ && "$1" != *"/../"* && "$1" != */.. ]]
+}
+
+generate_secret() {
+  openssl rand -hex 32
+}
+
 validate_domain() {
-  [[ "$1" =~ ^([a-zA-Z0-9.-]+\.)+[a-zA-Z]{2,}$ ]]
+  [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
 }
 
 validate_port() {
@@ -69,16 +90,19 @@ validate_port() {
 
 ensure_port_defaults() {
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
+  local default_smtp=25
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     default_http=18080 default_https=18443 default_lamp=18081 default_kuma=18301 default_wireguard=18520
+    default_smtp=2525
   fi
   HTTP_PORT="${HTTP_PORT:-$default_http}"
   HTTPS_PORT="${HTTPS_PORT:-$default_https}"
   LAMP_PORT="${LAMP_PORT:-$default_lamp}"
   UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-$default_kuma}"
   WIREGUARD_PORT="${WIREGUARD_PORT:-$default_wireguard}"
+  SMTP_PORT="${SMTP_PORT:-$default_smtp}"
   SSH_PORT="${SSH_PORT:-22}"
-  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT SSH_PORT
+  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT SSH_PORT SMTP_PORT
 }
 
 set_port_defaults() {
@@ -87,19 +111,21 @@ set_port_defaults() {
   LAMP_PORT=8080
   UPTIME_KUMA_PORT=3001
   WIREGUARD_PORT=51820
+  SMTP_PORT=25
   if [[ "$1" == local ]]; then
     HTTP_PORT=18080
     HTTPS_PORT=18443
     LAMP_PORT=18081
     UPTIME_KUMA_PORT=18301
     WIREGUARD_PORT=18520
+    SMTP_PORT=2525
   fi
 }
 
 validate_port_plan() {
   local -A assigned=(["${SSH_PORT:-22}"]="host SSH")
   local variable module_name port
-  local -a tcp_ports=(HTTP_PORT HTTPS_PORT)
+  local -a tcp_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
       lamp) tcp_ports+=(LAMP_PORT) ;;
@@ -122,7 +148,7 @@ validate_port_plan() {
 configure_ports() {
   local default_profile=standard
   local variable module_name protocol
-  local -a custom_ports=(HTTP_PORT HTTPS_PORT)
+  local -a custom_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
   ensure_port_defaults
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then default_profile=local; fi
   for module_name in ${BASM_MODULES:-basm}; do
@@ -152,7 +178,7 @@ configure_ports() {
       warn "$variable (${!variable}/$protocol) is already in use on this host. Stop its current owner or rerun with custom ports."
     fi
   done
-  export PORT_PROFILE HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
+  export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
 }
 
 validate_local_bind_address() {
@@ -186,14 +212,15 @@ configure_local_mode() {
 
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
+  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION}'
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     proxy_template="$ROOT_DIR/templates/traefik-local.yml"
   fi
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   export BASM_CONTAINER_PREFIX="${BASM_CONTAINER_PREFIX:-basm}"
   ensure_port_defaults
-  envsubst < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
-  envsubst < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
+  envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
+  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
   envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$BASM_ROOT/config/traefik-static.yml"
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     cat >> "$BASM_ROOT/config/traefik-static.yml" <<EOF
@@ -204,6 +231,21 @@ certificatesResolvers:
       storage: "/data/acme.json"
       tlsChallenge: {}
 EOF
+  fi
+}
+
+render_postal_config() {
+  local postal_config_dir="$BASM_ROOT/config/postal"
+  ensure_dir "$postal_config_dir"
+  envsubst '${MAIL_URL} ${POSTAL_WEB_PROTOCOL} ${PRIMARY_DOMAIN} ${ADMIN_EMAIL} ${COMPANY_NAME} ${POSTAL_DB_PASSWORD} ${POSTAL_RAILS_SECRET}' \
+    < "$ROOT_DIR/templates/postal.yml" > "$postal_config_dir/postal.yml"
+  chmod 640 "$postal_config_dir/postal.yml"
+  if [[ ! -f "$postal_config_dir/signing.key" ]]; then
+    openssl genrsa -out "$postal_config_dir/signing.key" 2048
+  fi
+  chmod 640 "$postal_config_dir/signing.key"
+  if [[ "$EUID" -eq 0 ]]; then
+    chown 999:999 "$postal_config_dir/postal.yml" "$postal_config_dir/signing.key"
   fi
 }
 
@@ -241,13 +283,12 @@ select_deployment() {
   local domain
   domain="$(prompt_value "Primary domain (e.g. example.com), or 'local' for local test setup" example.com '[[ "$1" == local || "$1" == localhost || "$1" == 127.0.0.1 ]] || validate_domain "$1"')"
   LOCAL_MODE=false
-  BASM_ENV_FILE="$CONFIG_DIR/basm.env"
   BASM_ROOT="${PRODUCTION_BASM_ROOT:-/opt/basm}"
   if [[ "$domain" == local || "$domain" == localhost || "$domain" == 127.0.0.1 ]]; then
     LOCAL_MODE=true
-    BASM_ENV_FILE="$CONFIG_DIR/local.env"
     BASM_ROOT="${LOCAL_BASM_ROOT:-/opt/basm-local}"
   fi
+  BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
   if [[ -f "$BASM_ENV_FILE" ]]; then
     set -a
     source "$BASM_ENV_FILE"
@@ -327,27 +368,49 @@ run_wizard() {
     if [[ "$LOCAL_BIND_ADDRESS" == localhost ]]; then LOCAL_BIND_ADDRESS=127.0.0.1; fi
     configure_local_mode
     BASM_CONTAINER_PREFIX=basm-local
+    SMTP_BIND_ADDRESS=127.0.0.1
+    SMTP_PORT=2525
   else
     DEPLOYMENT_MODE=production
     BIND_ADDRESS=0.0.0.0
     BASM_CONTAINER_PREFIX=basm
+    SMTP_BIND_ADDRESS=0.0.0.0
+    SMTP_PORT=25
   fi
 
-  COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" "[[ \"\$1\" != \"\" ]]")"
-  ADMIN_EMAIL="$(prompt_value "Administrator Email" "${ADMIN_EMAIL:-admin@example.com}" "validate_email \"\$1\"")"
-  TIMEZONE="$(prompt_value "Timezone" "${TIMEZONE:-Etc/UTC}" "[[ \"\$1\" != \"\" ]]")"
+  COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" 'validate_company_name "$1"')"
+  ADMIN_EMAIL="$(prompt_value "Administrator Email" "${ADMIN_EMAIL:-admin@example.com}" 'validate_email "$1"')"
+  TIMEZONE="$(prompt_value "Timezone" "${TIMEZONE:-Etc/UTC}" 'validate_timezone "$1"')"
+  NEXTCLOUD_ADMIN_USER="$(prompt_value "Nextcloud administrator username" "${NEXTCLOUD_ADMIN_USER:-basm-admin}" 'validate_admin_username "$1"')"
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then BACKUP_LOCATION="${BACKUP_LOCATION:-/var/backups/basm}"; fi
+  BACKUP_LOCATION="$(prompt_value "Backup destination directory" "${BACKUP_LOCATION:-$BASM_ROOT/backups}" 'validate_backup_path "$1"')"
 
   SSH_PORT="${SSH_PORT:-22}"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then
-    ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" "[[ \"\$1\" != \"\" ]]")"
-    MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" "[[ \"\$1\" != \"\" ]]")"
-    CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" "[[ \"\$1\" != \"\" ]]")"
-    BACKUP_LOCATION="${BACKUP_LOCATION:-/var/backups/basm}"
+    ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
   fi
 
   select_modules
   configure_ports
+  if port_in_use "$SMTP_PORT"; then
+    warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
+  fi
 
+  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_secret)}"
+  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_secret)}"
+  NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER:-basm-admin}"
+  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_secret)}"
+  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_secret)}"
+  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_secret)}"
+  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
+  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_secret)}"
+  POSTAL_WEB_PROTOCOL=http
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
+  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_secret)}"
+
+  mkdir -p "$(dirname "$BASM_ENV_FILE")"
   cat > "$BASM_ENV_FILE" <<EOF
 DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
 BIND_ADDRESS="$BIND_ADDRESS"
@@ -369,14 +432,41 @@ CLOUD_URL="$CLOUD_URL"
 BACKUP_LOCATION="$BACKUP_LOCATION"
 BASM_ROOT="$BASM_ROOT"
 BASM_MODULES="$BASM_MODULES"
+DB_ROOT_PASSWORD="$DB_ROOT_PASSWORD"
+ERP_ADMIN_PASSWORD="$ERP_ADMIN_PASSWORD"
+NEXTCLOUD_ADMIN_USER="$NEXTCLOUD_ADMIN_USER"
+NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
+POSTAL_DB_PASSWORD="$POSTAL_DB_PASSWORD"
+POSTAL_ADMIN_PASSWORD="$POSTAL_ADMIN_PASSWORD"
+POSTAL_RAILS_SECRET="$POSTAL_RAILS_SECRET"
+POSTAL_WEB_PROTOCOL="$POSTAL_WEB_PROTOCOL"
+NEXTCLOUD_DB_PASSWORD="$NEXTCLOUD_DB_PASSWORD"
+SMTP_BIND_ADDRESS="$SMTP_BIND_ADDRESS"
+SMTP_PORT=$SMTP_PORT
+RESTIC_PASSWORD="$RESTIC_PASSWORD"
 EOF
+  chmod 600 "$BASM_ENV_FILE"
 
   source "$BASM_ENV_FILE"
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
 }
 
 configure_system() {
   log "Configuring Debian installation"
+
+  if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+    local host memory_kib
+    for host in "$ERP_URL" "$MAIL_URL" "$CLOUD_URL"; do
+      if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
+        warn "DNS for $host does not resolve yet; public routes and TLS issuance will not be ready."
+      fi
+    done
+    memory_kib="$(awk '/MemTotal:/ {print $2}' /proc/meminfo)"
+    if (( memory_kib < 4194304 )) || (( $(nproc) < 2 )); then
+      warn "Postal recommends at least 4 GiB RAM and 2 CPU cores; this host is below that baseline."
+    fi
+    warn "Production mail requires public MX/SPF/DKIM/DMARC records and inbound/outbound TCP port 25."
+  fi
 
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
@@ -393,11 +483,16 @@ configure_system() {
   ensure_dir "$BASM_ROOT"
   ensure_dir "$BASM_ROOT/config"
   ensure_dir "$BASM_ROOT/data"
+  ensure_dir "$BASM_ROOT/data/db-backups"
   ensure_dir "$BASM_ROOT/logs"
   ensure_dir "$BACKUP_LOCATION"
+  ensure_dir "$BACKUP_LOCATION/restic"
   ensure_dir "$OUTPUT_DIR"
+  cp "$ROOT_DIR/templates/erpnext-create-site.sh" "$BASM_ROOT/config/erpnext-create-site.sh"
+  chmod 755 "$BASM_ROOT/config/erpnext-create-site.sh"
 
   render_stack
+  render_postal_config
 
   log "System setup complete"
 }
@@ -440,6 +535,7 @@ run_module_install() {
 port_summary() {
   printf 'Port Profile: %s\n' "${PORT_PROFILE:-custom}"
   printf 'Proxy HTTP: %s/tcp\nProxy HTTPS: %s/tcp\n' "$HTTP_PORT" "$HTTPS_PORT"
+  printf 'Postal SMTP: %s/tcp\n' "$SMTP_PORT"
   printf 'Host SSH (unchanged): %s/tcp\n' "${SSH_PORT:-22}"
   local module_name
   for module_name in ${BASM_MODULES:-basm}; do
@@ -473,11 +569,18 @@ HTTP URLs (no public DNS or certificates required):
 - ERP: http://$ERP_URL:$HTTP_PORT
 - Mail: http://$MAIL_URL:$HTTP_PORT
 
+Initial login details:
+- ERPNext user: Administrator
+- Nextcloud user: $NEXTCLOUD_ADMIN_USER
+- Postal user: $ADMIN_EMAIL
+- Generated passwords and database secrets: $BASM_ROOT/config/basm.env (root-only)
+
 For LAN clients, map $ERP_URL, $MAIL_URL and $CLOUD_URL
 to $BIND_ADDRESS in each client's hosts file or private DNS.
 Do not forward these ports on your router. HTTP is unencrypted.
 SSH settings and the host firewall are not changed by local mode.
-Existing upstream ERPNext/Postal provisioning steps still apply.
+Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port $SMTP_PORT; public mail delivery requires a production domain and DNS records.
+Restic encrypts daily backups to $BACKUP_LOCATION/restic.
 Optional modules retain their existing generation-only behavior.
 Backup Location: $BACKUP_LOCATION
 EOF
@@ -502,6 +605,12 @@ URLs:
 - Mail: https://$MAIL_URL:$HTTPS_PORT
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT
 
+Initial login details:
+- ERPNext user: Administrator
+- Nextcloud user: $NEXTCLOUD_ADMIN_USER
+- Postal user: $ADMIN_EMAIL
+- Generated passwords and database secrets: $BASM_ROOT/config/basm.env (root-only)
+
 Ports:
 $(port_summary)
 
@@ -513,6 +622,7 @@ DNS Records Required:
 - A record for $ERP_URL -> Public IP
 - A record for $MAIL_URL -> Public IP
 - A record for $CLOUD_URL -> Public IP
+- MX, SPF, DKIM, and DMARC records for the mail domains shown in Postal
 
 Router Port Forwarding Required:
 - Forward $HTTP_PORT to the BASM server
@@ -525,6 +635,7 @@ Post-installation Checklist:
 [ ] Test outgoing mail
 [ ] Store admin credentials securely
 [ ] Verify backup completion
+[ ] Confirm the provider permits inbound and outbound TCP port 25
 
 Generated at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
 EOF
