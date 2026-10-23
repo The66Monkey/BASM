@@ -40,6 +40,66 @@ ensure_dir() {
   mkdir -p "$1"
 }
 
+BASM_FULL_MODULES="basm lamp wireguard uptime-kuma"
+BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl"
+
+package_installed() {
+  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+}
+
+# Installs only missing packages and never upgrades installed ones, so reruns,
+# upgrades, and promotions do not download packages unnecessarily.
+ensure_packages() {
+  local package
+  local -a missing=()
+  for package in "$@"; do
+    package_installed "$package" || missing+=("$package")
+  done
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    log "Required packages are already installed"
+    return 0
+  fi
+  log "Installing missing packages: ${missing[*]}"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update || fail "apt-get update failed"
+  apt-get install -y --no-upgrade "${missing[@]}" || fail "Failed to install: ${missing[*]}"
+}
+
+module_selected() {
+  [[ " ${BASM_MODULES:-basm} " == *" $1 "* ]]
+}
+
+# Compose gives exported shell variables precedence over --env-file. Run it with
+# only the variables it needs so a stale or different deployment's values
+# (for example during promotion rollback) can never leak into a stack.
+basm_compose() {
+  (
+    local variable
+    while IFS= read -r variable; do
+      case "$variable" in
+        PATH|HOME|USER|LANG|LC_*|TERM|TMPDIR|DOCKER_*|COMPOSE_*|BUILDKIT_*) ;;
+        *) export -n "$variable" 2>/dev/null || true ;;
+      esac
+    done < <(compgen -e)
+    docker compose "$@"
+  )
+}
+
+module_compose_files() {
+  local root="${1:-$BASM_ROOT}" file
+  for file in "$root"/modules/*/docker-compose.yml; do
+    [[ -f "$file" ]] && printf '%s\n' "$file"
+  done
+  return 0
+}
+
+start_module_stack() {
+  local compose_file="$BASM_ROOT/modules/$1/docker-compose.yml"
+  command -v docker >/dev/null 2>&1 || fail "Docker CLI was not found; module '$1' cannot be started."
+  log "Starting $1 module"
+  basm_compose -f "$compose_file" up -d --remove-orphans --quiet-pull || fail "Module '$1' did not start cleanly."
+}
+
 port_in_use() {
   local port="$1"
   local options=-lnt
@@ -57,6 +117,16 @@ port_in_use() {
 
 validate_email() {
   [[ "$1" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]
+}
+
+# Let's Encrypt rejects reserved example/test domains as account contacts.
+validate_production_email() {
+  local domain="${1##*@}"
+  validate_email "$1" || return 1
+  domain="${domain,,}"
+  case "$domain" in
+    example.com|example.net|example.org|*.example|*.test|*.invalid|*.localhost|localhost) return 1 ;;
+  esac
 }
 
 validate_admin_username() {
@@ -212,18 +282,22 @@ configure_local_mode() {
 
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
-  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION}'
+  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS}'
+  export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
+  export NEXTCLOUD_TRUSTED_DOMAINS="${CLOUD_URL:-}"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     proxy_template="$ROOT_DIR/templates/traefik-local.yml"
+    NEXTCLOUD_TRUSTED_DOMAINS="$CLOUD_URL localhost 127.0.0.1"
+    if [[ "$BIND_ADDRESS" != 127.0.0.1 ]]; then NEXTCLOUD_TRUSTED_DOMAINS+=" $BIND_ADDRESS"; fi
   fi
-  export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   export BASM_CONTAINER_PREFIX="${BASM_CONTAINER_PREFIX:-basm}"
   ensure_port_defaults
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
-  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
+  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
   envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$BASM_ROOT/config/traefik-static.yml"
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     cat >> "$BASM_ROOT/config/traefik-static.yml" <<EOF
+
 certificatesResolvers:
   letsencrypt:
     acme:
@@ -280,8 +354,10 @@ prompt_value() {
 }
 
 select_deployment() {
-  local domain
-  domain="$(prompt_value "Primary domain (e.g. example.com), or 'local' for local test setup" example.com '[[ "$1" == local || "$1" == localhost || "$1" == 127.0.0.1 ]] || validate_domain "$1"')"
+  local domain="${BASM_PRESET_DOMAIN:-}"
+  if [[ -z "$domain" ]]; then
+    domain="$(prompt_value "Primary domain (e.g. example.com), or 'local' for local test setup" example.com '[[ "$1" == local || "$1" == localhost || "$1" == 127.0.0.1 ]] || validate_domain "$1"')"
+  fi
   LOCAL_MODE=false
   BASM_ROOT="${PRODUCTION_BASM_ROOT:-/opt/basm}"
   if [[ "$domain" == local || "$domain" == localhost || "$domain" == 127.0.0.1 ]]; then
@@ -303,14 +379,24 @@ select_deployment() {
 }
 
 print_module_menu() {
+  local index=1 module_name label mark
   printf '\nBASM installation menu\n\n'
-  printf '[✓] BASM Core (required)\n'
-  printf '[ ] LAMP\n'
-  printf '[ ] WireGuard\n'
-  printf '[ ] Fluxer\n'
-  printf '[ ] Vaultwarden\n'
-  printf '[ ] Uptime Kuma\n\n'
-  printf 'Select modules by number (1-6), separated by spaces. Leave blank to use defaults.\n'
+  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma; do
+    case "$module_name" in
+      basm) label='BASM Core (required)' ;;
+      lamp) label='LAMP' ;;
+      wireguard) label='WireGuard' ;;
+      fluxer) label='Fluxer' ;;
+      vaultwarden) label='Vaultwarden' ;;
+      uptime-kuma) label='Uptime Kuma' ;;
+    esac
+    mark=' '
+    if [[ "$module_name" == basm ]] || module_selected "$module_name"; then mark='✓'; fi
+    printf '%s) [%s] %s\n' "$index" "$mark" "$label"
+    index=$((index + 1))
+  done
+  printf '\nSelect modules by number (1-6), separated by spaces, or enter "full" for\n'
+  printf 'Core + LAMP + WireGuard + Uptime Kuma. Leave blank to keep the checked modules.\n'
   printf 'Example: 2 4 6\n'
 }
 
@@ -330,7 +416,12 @@ select_modules() {
   read -rp "Module selection: " input
 
   if [[ -z "$input" ]]; then
-    BASM_MODULES="basm"
+    BASM_MODULES="${BASM_MODULES:-basm}"
+    module_selected basm || BASM_MODULES="basm $BASM_MODULES"
+    return
+  fi
+  if [[ "$input" == full ]]; then
+    BASM_MODULES="$BASM_FULL_MODULES"
     return
   fi
 
@@ -358,58 +449,7 @@ select_modules() {
   BASM_MODULES="${BASM_MODULES% }"
 }
 
-run_wizard() {
-  log "Launching BASM wizard"
-
-  select_deployment
-
-  if [[ "${LOCAL_MODE:-false}" == true ]]; then
-    LOCAL_BIND_ADDRESS="$(prompt_value "Local bind address (localhost or private LAN IPv4)" localhost '[[ "$1" == localhost ]] || validate_local_bind_address "$1"')"
-    if [[ "$LOCAL_BIND_ADDRESS" == localhost ]]; then LOCAL_BIND_ADDRESS=127.0.0.1; fi
-    configure_local_mode
-    BASM_CONTAINER_PREFIX=basm-local
-    SMTP_BIND_ADDRESS=127.0.0.1
-    SMTP_PORT=2525
-  else
-    DEPLOYMENT_MODE=production
-    BIND_ADDRESS=0.0.0.0
-    BASM_CONTAINER_PREFIX=basm
-    SMTP_BIND_ADDRESS=0.0.0.0
-    SMTP_PORT=25
-  fi
-
-  COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" 'validate_company_name "$1"')"
-  ADMIN_EMAIL="$(prompt_value "Administrator Email" "${ADMIN_EMAIL:-admin@example.com}" 'validate_email "$1"')"
-  TIMEZONE="$(prompt_value "Timezone" "${TIMEZONE:-Etc/UTC}" 'validate_timezone "$1"')"
-  NEXTCLOUD_ADMIN_USER="$(prompt_value "Nextcloud administrator username" "${NEXTCLOUD_ADMIN_USER:-basm-admin}" 'validate_admin_username "$1"')"
-  if [[ "$DEPLOYMENT_MODE" != local ]]; then BACKUP_LOCATION="${BACKUP_LOCATION:-/var/backups/basm}"; fi
-  BACKUP_LOCATION="$(prompt_value "Backup destination directory" "${BACKUP_LOCATION:-$BASM_ROOT/backups}" 'validate_backup_path "$1"')"
-
-  SSH_PORT="${SSH_PORT:-22}"
-  if [[ "$DEPLOYMENT_MODE" != local ]]; then
-    ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-    MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-    CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-  fi
-
-  select_modules
-  configure_ports
-  if port_in_use "$SMTP_PORT"; then
-    warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
-  fi
-
-  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_secret)}"
-  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_secret)}"
-  NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER:-basm-admin}"
-  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_secret)}"
-  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_secret)}"
-  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_secret)}"
-  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
-  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_secret)}"
-  POSTAL_WEB_PROTOCOL=http
-  if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
-  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_secret)}"
-
+write_env_file() {
   mkdir -p "$(dirname "$BASM_ENV_FILE")"
   cat > "$BASM_ENV_FILE" <<EOF
 DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
@@ -446,6 +486,73 @@ SMTP_PORT=$SMTP_PORT
 RESTIC_PASSWORD="$RESTIC_PASSWORD"
 EOF
   chmod 600 "$BASM_ENV_FILE"
+}
+
+run_wizard() {
+  log "Launching BASM wizard"
+
+  select_deployment
+
+  if [[ "${LOCAL_MODE:-false}" == true ]]; then
+    LOCAL_BIND_ADDRESS="$(prompt_value "Local bind address (localhost or private LAN IPv4)" localhost '[[ "$1" == localhost ]] || validate_local_bind_address "$1"')"
+    if [[ "$LOCAL_BIND_ADDRESS" == localhost ]]; then LOCAL_BIND_ADDRESS=127.0.0.1; fi
+    configure_local_mode
+    BASM_CONTAINER_PREFIX=basm-local
+    SMTP_BIND_ADDRESS=127.0.0.1
+    SMTP_PORT=2525
+  else
+    DEPLOYMENT_MODE=production
+    BIND_ADDRESS=0.0.0.0
+    BASM_CONTAINER_PREFIX=basm
+    SMTP_BIND_ADDRESS=0.0.0.0
+    SMTP_PORT=25
+  fi
+
+  COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" 'validate_company_name "$1"')"
+  local email_validator='validate_email "$1"' default_email="${ADMIN_EMAIL:-admin@example.com}"
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then
+    email_validator='validate_production_email "$1"'
+    validate_production_email "$default_email" || default_email=""
+  fi
+  local attempt
+  ADMIN_EMAIL=""
+  for attempt in 1 2 3; do
+    ADMIN_EMAIL="$(prompt_value "Administrator Email (Let's Encrypt and Postal admin)" "$default_email" "$email_validator")"
+    [[ -n "$ADMIN_EMAIL" ]] && break
+    warn "A real administrator email address is required for production certificates."
+  done
+  [[ -n "$ADMIN_EMAIL" ]] || fail "No valid administrator email address was provided."
+  TIMEZONE="$(prompt_value "Timezone" "${TIMEZONE:-Etc/UTC}" 'validate_timezone "$1"')"
+  NEXTCLOUD_ADMIN_USER="$(prompt_value "Nextcloud administrator username" "${NEXTCLOUD_ADMIN_USER:-basm-admin}" 'validate_admin_username "$1"')"
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then BACKUP_LOCATION="${BACKUP_LOCATION:-/var/backups/basm}"; fi
+  BACKUP_LOCATION="$(prompt_value "Backup destination directory" "${BACKUP_LOCATION:-$BASM_ROOT/backups}" 'validate_backup_path "$1"')"
+
+  SSH_PORT="${SSH_PORT:-22}"
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then
+    ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+  fi
+
+  select_modules
+  configure_ports
+  if port_in_use "$SMTP_PORT"; then
+    warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
+  fi
+
+  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_secret)}"
+  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_secret)}"
+  NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER:-basm-admin}"
+  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_secret)}"
+  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_secret)}"
+  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_secret)}"
+  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
+  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_secret)}"
+  POSTAL_WEB_PROTOCOL=http
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
+  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_secret)}"
+
+  write_env_file
 
   source "$BASM_ENV_FILE"
   export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
@@ -468,22 +575,23 @@ configure_system() {
     warn "Production mail requires public MX/SPF/DKIM/DMARC records and inbound/outbound TCP port 25."
   fi
 
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update
-  apt-get install -y ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl
+  # shellcheck disable=SC2086
+  ensure_packages $BASM_REQUIRED_PACKAGES
 
-  if ! command -v docker >/dev/null 2>&1; then
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    if [[ ! -f /etc/apt/sources.list.d/docker.list ]]; then
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    fi
+    ensure_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
 
   ensure_dir "$BASM_ROOT"
   ensure_dir "$BASM_ROOT/config"
   ensure_dir "$BASM_ROOT/data"
   ensure_dir "$BASM_ROOT/data/db-backups"
+  chmod 700 "$BASM_ROOT/data/db-backups"
   ensure_dir "$BASM_ROOT/logs"
   ensure_dir "$BACKUP_LOCATION"
   ensure_dir "$BACKUP_LOCATION/restic"
@@ -524,12 +632,196 @@ run_module_install() {
   fi
 
   log "Running module installer: $module_name"
+  unset -f module_install module_start
   source "$script_path"
   if declare -F module_install >/dev/null; then
-    module_install
+    module_install || return
+    if declare -F module_start >/dev/null && [[ "${BASM_SKIP_START:-false}" != true ]]; then
+      module_start
+    fi
   else
     fail "Module '$module_name' does not expose a module_install function."
   fi
+}
+
+load_deployment_env() {
+  [[ -f "$BASM_ENV_FILE" ]] || fail "No BASM configuration was found at $BASM_ENV_FILE. Run the full installer for this environment first."
+  set -a
+  source "$BASM_ENV_FILE"
+  set +a
+  if [[ "${LOCAL_MODE:-false}" == true ]]; then
+    [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "Expected a local environment configuration."
+    validate_local_bind_address "$BIND_ADDRESS" || fail "Unsafe local bind address."
+  fi
+  ensure_port_defaults
+}
+
+add_modules_to_selection() {
+  local module_name
+  for module_name in "$@"; do
+    module_selected "$module_name" || BASM_MODULES="${BASM_MODULES:-basm} $module_name"
+  done
+  export BASM_MODULES
+}
+
+module_port_variable() {
+  case "$1" in
+    lamp) printf 'LAMP_PORT' ;;
+    uptime-kuma) printf 'UPTIME_KUMA_PORT' ;;
+    wireguard) printf 'WIREGUARD_PORT' ;;
+  esac
+}
+
+# Adds optional modules to an existing deployment without touching the core
+# stack, system packages, or credentials. Already-cached images are reused.
+upgrade_modules() {
+  local module_name variable protocol
+  local -a added=()
+  [[ -f "$BASM_ROOT/docker-compose.yml" ]] || fail "No core BASM stack was found at $BASM_ROOT. Run the full installer first."
+  for module_name in "$@"; do
+    [[ -f "$MODULES_DIR/$module_name.sh" ]] || fail "Unknown module: $module_name"
+    module_selected "$module_name" || added+=("$module_name")
+  done
+  add_modules_to_selection "$@"
+
+  while ! validate_port_plan; do
+    warn "The current port plan conflicts with the requested modules. Choose new module ports."
+    for module_name in "${added[@]}"; do
+      variable="$(module_port_variable "$module_name")"
+      [[ -n "$variable" ]] || continue
+      printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
+    done
+    PORT_PROFILE=custom
+  done
+  for module_name in "${added[@]}"; do
+    variable="$(module_port_variable "$module_name")"
+    [[ -n "$variable" ]] || continue
+    protocol=tcp
+    if [[ "$variable" == WIREGUARD_PORT ]]; then protocol=udp; fi
+    if port_in_use "${!variable}" "$protocol"; then
+      warn "$variable (${!variable}/$protocol) is already in use on this host."
+    fi
+  done
+  export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
+
+  write_env_file
+  for module_name in "$@"; do
+    [[ "$module_name" == basm ]] && continue
+    run_module_install "$module_name" || fail "Module '$module_name' failed to install."
+  done
+  write_summary
+  log "Installed modules: $BASM_MODULES"
+}
+
+upgrade_to_full() {
+  log "Upgrading $BASM_ROOT to the full BASM profile"
+  # shellcheck disable=SC2086
+  upgrade_modules $BASM_FULL_MODULES
+}
+
+# Stops a deployment's containers without removing data or volumes.
+stop_deployment() {
+  local root="$1" compose_file
+  command -v docker >/dev/null 2>&1 || return 0
+  while IFS= read -r compose_file; do
+    basm_compose -f "$compose_file" down --remove-orphans || warn "Could not stop $compose_file"
+  done < <(module_compose_files "$root")
+  if [[ -f "$root/docker-compose.yml" ]]; then
+    log "Stopping BASM Docker stack at $root"
+    basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" down --remove-orphans || warn "Could not stop the core stack at $root"
+  fi
+}
+
+start_deployment() {
+  local root="$1" compose_file
+  command -v docker >/dev/null 2>&1 || return 0
+  if [[ -f "$root/docker-compose.yml" ]]; then
+    basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" up -d --remove-orphans || warn "Could not restart the core stack at $root"
+  fi
+  while IFS= read -r compose_file; do
+    basm_compose -f "$compose_file" up -d --remove-orphans || warn "Could not restart $compose_file"
+  done < <(module_compose_files "$root")
+}
+
+# Stops every BASM stack under a root, removes its containers, networks and
+# named volumes, then deletes the directory. Docker images are kept so a later
+# install can reuse them without downloading.
+purge_deployment() {
+  local root="$1" compose_file
+  [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
+  if command -v docker >/dev/null 2>&1; then
+    while IFS= read -r compose_file; do
+      log "Stopping module stack $compose_file"
+      basm_compose -f "$compose_file" down -v --remove-orphans || warn "Could not stop $compose_file"
+    done < <(module_compose_files "$root")
+    if [[ -f "$root/docker-compose.yml" ]]; then
+      log "Stopping BASM Docker stack at $root"
+      basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" down -v --remove-orphans || warn "Could not stop the core stack at $root"
+    fi
+  fi
+  rm -rf "$root"
+}
+
+# Replaces a local test deployment with a fresh production deployment.
+# Organization settings and the module selection carry over; secrets, data,
+# URLs, and ports do not. Packages and cached images are reused.
+promote_to_production() {
+  local local_root="${LOCAL_BASM_ROOT:-/opt/basm-local}"
+  local production_root="${PRODUCTION_BASM_ROOT:-/opt/basm}"
+  local domain="" answer local_backup variable
+
+  [[ -f "$local_root/config/basm.env" ]] || fail "No local BASM installation was found at $local_root."
+  if [[ -f "$production_root/docker-compose.yml" ]]; then
+    fail "A production stack already exists at $production_root. Use ./update.sh or uninstall it before promoting."
+  fi
+  set -a
+  source "$local_root/config/basm.env"
+  set +a
+  [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "$local_root does not contain a local test configuration."
+  local_backup="${BACKUP_LOCATION:-$local_root/backups}"
+
+  while [[ -z "$domain" ]]; do
+    domain="$(prompt_value "Production primary domain (e.g. example.com)" "" 'validate_domain "$1"')"
+  done
+
+  printf '\nPromoting the local test install to production on %s:\n' "$domain"
+  printf -- '- The local stack, its data, and its credentials under %s are permanently removed.\n' "$local_root"
+  printf -- '- A fresh production stack with new credentials is created under %s.\n' "$production_root"
+  printf -- '- Company, admin email, time zone, Nextcloud admin name, and modules (%s) carry over.\n' "${BASM_MODULES:-basm}"
+  printf -- '- Installed packages and cached Docker images are reused; nothing is upgraded.\n\n'
+  read -rp "Type 'promote' to continue: " answer
+  [[ "$answer" == promote ]] || { log "Promotion cancelled."; return 1; }
+
+  for variable in DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE HTTP_PORT HTTPS_PORT \
+    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
+    BACKUP_LOCATION PRIMARY_DOMAIN DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD \
+    NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET \
+    POSTAL_WEB_PROTOCOL RESTIC_PASSWORD; do
+    unset "$variable"
+  done
+
+  BASM_PRESET_DOMAIN="$domain"
+  run_wizard
+  unset BASM_PRESET_DOMAIN
+  [[ "$DEPLOYMENT_MODE" == production && "$BASM_ROOT" == "$production_root" ]] || fail "Production configuration was not created."
+
+  # Stop (but keep) the local install so its data survives a failed setup.
+  stop_deployment "$local_root"
+  if ! ( configure_system && install_selected_modules ); then
+    warn "Production setup failed. Rolling back to the local test install."
+    purge_deployment "$production_root"
+    start_deployment "$local_root"
+    fail "Promotion failed; the local install at $local_root was restored. Fix the reported error and rerun ./install.sh --promote."
+  fi
+
+  log "Removing local test deployment at $local_root"
+  purge_deployment "$local_root"
+  if [[ "$local_backup" != "$local_root" && "$local_backup" != "$local_root"/* && -d "$local_backup" ]]; then
+    warn "Local backups at $local_backup were kept. Delete them manually when no longer needed."
+  fi
+  rm -f "$OUTPUT_DIR/local-installation-summary.txt"
+  write_summary
+  log "Promotion to production completed."
 }
 
 port_summary() {
@@ -537,12 +829,13 @@ port_summary() {
   printf 'Proxy HTTP: %s/tcp\nProxy HTTPS: %s/tcp\n' "$HTTP_PORT" "$HTTPS_PORT"
   printf 'Postal SMTP: %s/tcp\n' "$SMTP_PORT"
   printf 'Host SSH (unchanged): %s/tcp\n' "${SSH_PORT:-22}"
-  local module_name
+  local module_name host="$BIND_ADDRESS"
+  if [[ "$host" == 0.0.0.0 ]]; then host="$PRIMARY_DOMAIN"; fi
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
-      lamp) printf 'LAMP: http://%s:%s\n' "$BIND_ADDRESS" "$LAMP_PORT" ;;
-      uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$BIND_ADDRESS" "$UPTIME_KUMA_PORT" ;;
-      wireguard) printf 'WireGuard generated ListenPort: %s/udp\n' "$WIREGUARD_PORT" ;;
+      lamp) printf 'LAMP: http://%s:%s\n' "$host" "$LAMP_PORT" ;;
+      uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
+      wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
     esac
   done
 }
@@ -581,7 +874,9 @@ Do not forward these ports on your router. HTTP is unencrypted.
 SSH settings and the host firewall are not changed by local mode.
 Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port $SMTP_PORT; public mail delivery requires a production domain and DNS records.
 Restic encrypts daily backups to $BACKUP_LOCATION/restic.
-Optional modules retain their existing generation-only behavior.
+LAMP and Uptime Kuma start automatically when selected; WireGuard generates configuration only.
+Upgrade to the full profile: sudo ./install.sh --full (choose local)
+Promote to production: sudo ./install.sh --promote
 Backup Location: $BACKUP_LOCATION
 EOF
     log "Summary written to $summary_file"

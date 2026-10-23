@@ -7,6 +7,7 @@ module_install() {
   ensure_port_defaults
   ensure_dir "$BASM_ROOT/modules/uptime-kuma"
   cat > "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml" <<EOF
+name: ${BASM_CONTAINER_PREFIX:-basm}-uptime-kuma
 services:
   uptime-kuma:
     image: louislam/uptime-kuma:latest
@@ -18,4 +19,8 @@ services:
       - ./data:/app/data
 EOF
   log "Uptime Kuma module configuration generated"
+}
+
+module_start() {
+  start_module_stack uptime-kuma
 }

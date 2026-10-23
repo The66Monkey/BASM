@@ -111,7 +111,7 @@ set_port_defaults standard
 render_stack
 grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
 grep -Fq 'container_name: basm-traefik' "$BASM_ROOT/docker-compose.yml"
-grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
+grep -Fqx 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 source "$ROOT_DIR/modules/lamp.sh"
 module_install
 grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
@@ -143,14 +143,14 @@ grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.tx
 grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
 if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
 
-run_wizard < <(printf 'business.example\n\n\n\n\n\n\n\n\n2 3 6\nstandard\n')
+run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\n2 3 6\nstandard\n')
 mkdir -p "$BASM_ROOT/config"
 render_stack
 write_summary
 [[ "$HTTP_PORT" == 80 && "$HTTPS_PORT" == 443 && "$LAMP_PORT" == 8080 && "$UPTIME_KUMA_PORT" == 3001 && "$WIREGUARD_PORT" == 51820 ]]
 grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
 grep -Fq 'https://erp.business.example:443' "$OUTPUT_DIR/installation-summary.txt"
-grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
+grep -Fqx 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 if grep -Eq '^(entryPoints|certificatesResolvers):' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
 port_in_use() { return 1; }
 configure_ports < <(printf 'custom\n19080\n19443\n12525\n19081\n51825\n19301\n')

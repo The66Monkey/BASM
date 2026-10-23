@@ -33,13 +33,6 @@ if [[ ! "$answer" =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
-if [[ -f "$BASM_ROOT/docker-compose.yml" ]]; then
-  log "Stopping BASM Docker stack"
-  docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" down -v --remove-orphans || true
-fi
-
-if [[ -d "$BASM_ROOT" ]]; then
-  rm -rf "$BASM_ROOT"
-fi
+purge_deployment "$BASM_ROOT"
 
 log "BASM has been removed."

@@ -15,25 +15,46 @@ source "$MODULES_DIR/core.sh"
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--module <module-name>] [--help]
+Usage: ./install.sh [--module <module-name> | --full | --promote] [--help]
+
+  (no option)         Run the setup wizard (new install or reconfigure)
+  --module <name>     Add one module to an existing install
+  --full              Upgrade an existing basic install to the full profile
+                      (Core + LAMP + WireGuard + Uptime Kuma); core is untouched
+  --promote           Replace the local test install with a fresh production
+                      install, reusing installed packages and cached images
 
 Examples:
   ./install.sh
   ./install.sh --module wireguard
-  ./install.sh --module fluxer
+  ./install.sh --full
+  ./install.sh --promote
 EOF
 }
 
 MODULE_NAME=""
+ACTION=install
 PRODUCTION_BASM_ROOT="$BASM_ROOT"
 LOCAL_BASM_ROOT="$BASM_ROOT"
 if [[ "$LOCAL_BASM_ROOT" == /opt/basm ]]; then LOCAL_BASM_ROOT=/opt/basm-local; fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --module|--full|--promote)
+      [[ "$ACTION" == install ]] || fail "Use only one of --module, --full, or --promote."
+      ;;&
     --module)
       [[ $# -ge 2 ]] || fail "--module requires a value"
       MODULE_NAME="$2"
+      ACTION=module
       shift 2
+      ;;
+    --full)
+      ACTION=full
+      shift
+      ;;
+    --promote)
+      ACTION=promote
+      shift
       ;;
     --help|-h)
       usage
@@ -48,19 +69,28 @@ done
 require_root
 check_debian
 
-if [[ -n "$MODULE_NAME" ]]; then
-  select_deployment
-  [[ -f "$BASM_ENV_FILE" ]] || fail "Run the full installer for this environment first."
-  set -a
-  source "$BASM_ENV_FILE"
-  set +a
-  if [[ "$LOCAL_MODE" == true ]]; then
-    [[ "$DEPLOYMENT_MODE" == local ]] || fail "Expected a local environment configuration."
-    validate_local_bind_address "$BIND_ADDRESS" || fail "Unsafe local bind address."
-  fi
-  run_module_install "$MODULE_NAME"
-  exit $?
-fi
+case "$ACTION" in
+  module)
+    select_deployment
+    load_deployment_env
+    if [[ "$MODULE_NAME" == basm ]]; then
+      run_module_install basm
+    else
+      upgrade_modules "$MODULE_NAME"
+    fi
+    exit $?
+    ;;
+  full)
+    select_deployment
+    load_deployment_env
+    upgrade_to_full
+    exit $?
+    ;;
+  promote)
+    promote_to_production
+    exit $?
+    ;;
+esac
 
 run_wizard
 configure_system

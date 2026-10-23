@@ -9,7 +9,6 @@ services:
       - "${BIND_ADDRESS}:${HTTP_PORT}:80"
       - "${BIND_ADDRESS}:${HTTPS_PORT}:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${BASM_ROOT}/config/traefik.yml:/etc/traefik/dynamic.yml:ro
       - ${BASM_ROOT}/config/traefik-static.yml:/etc/traefik/static.yml:ro
       - ${BASM_ROOT}/data/traefik:/data
@@ -28,7 +27,8 @@ services:
       - ${BASM_ROOT}/data/erpnext-db:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 20s
+      start_period: 300s
+      start_interval: 5s
       interval: 5s
       timeout: 5s
       retries: 10
@@ -204,7 +204,8 @@ services:
       - ${BASM_ROOT}/data/nextcloud-db:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 20s
+      start_period: 300s
+      start_interval: 5s
       interval: 5s
       timeout: 5s
       retries: 10
@@ -231,7 +232,8 @@ services:
       MYSQL_HOST: nextcloud-db
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
-      NEXTCLOUD_TRUSTED_DOMAINS: "${CLOUD_URL} localhost 127.0.0.1 ${BIND_ADDRESS}"
+      NEXTCLOUD_TRUSTED_DOMAINS: "${NEXTCLOUD_TRUSTED_DOMAINS}"
+      TRUSTED_PROXIES: "172.16.0.0/12 192.168.0.0/16 10.0.0.0/8"
       REDIS_HOST: nextcloud-redis
       OVERWRITEPROTOCOL: ${POSTAL_WEB_PROTOCOL}
     volumes:
@@ -276,7 +278,8 @@ services:
       - ${BASM_ROOT}/data/postal-db:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 20s
+      start_period: 300s
+      start_interval: 5s
       interval: 5s
       timeout: 5s
       retries: 10
@@ -360,6 +363,8 @@ services:
     command:
       - >-
         set -e;
+        umask 077;
+        chmod 600 /dumps/*.sql 2>/dev/null || true;
         while true; do
           MYSQL_PWD="$$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h erp-db -uroot --all-databases > /dumps/erp.sql.tmp;
           mv /dumps/erp.sql.tmp /dumps/erp.sql;

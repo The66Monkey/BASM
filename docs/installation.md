@@ -69,7 +69,7 @@ Fluxer remains a placeholder in this repository; there is no Fluxer server or
 port mapping to configure yet.
 
 Traefik's static listeners remain on container ports 80/443; only host mappings
-change. Production HTTPS URLs include the selected port. Let's Encrypt TLS
+change. In production, HTTP requests are permanently redirected to HTTPS. Production HTTPS URLs include the selected port. Let's Encrypt TLS
 validation still requires public TCP port 443 to reach Traefik, even when the
 chosen host HTTPS port differs. Arrange appropriate routing for production.
 
@@ -139,25 +139,22 @@ Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps. A local repository is not
 an off-host backup; configure an external copy and test restores.
 
-Optional modules retain their existing behavior: LAMP and Uptime Kuma generate
-Compose files but do not start automatically; WireGuard generates a configuration;
-Fluxer and Vaultwarden are placeholders. LAMP uses port 18081 in local mode and
-Uptime Kuma uses 18301 with the local port profile, both bound to the selected local address. To start generated
-optional services explicitly:
-
-```bash
-sudo docker compose -f /opt/basm-local/modules/lamp/docker-compose.yml up -d
-sudo docker compose -f /opt/basm-local/modules/uptime-kuma/docker-compose.yml up -d
-```
-
-Stop these optional services with the same commands replacing `up -d` with `down`
-before removing local data. The wizard rejects conflicting port assignments
-among the selected services.
+Optional modules: LAMP and Uptime Kuma are started automatically when selected
+(each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
+LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
+WireGuard generates a server config and a `peer1.conf` client config with fresh
+keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer and
+Vaultwarden are placeholders.
+LAMP uses port 18081 in local mode and Uptime Kuma uses 18301 with the local port
+profile, both bound to the selected local address. `uninstall.sh` stops them and
+`update.sh` updates them together with the core stack. The wizard rejects
+conflicting port assignments among the selected services.
 
 ### Local maintenance
 
 ```bash
 sudo ./install.sh --module lamp
+sudo ./install.sh --full
 sudo ./update.sh
 sudo ./uninstall.sh
 ```
@@ -168,14 +165,82 @@ data. Production configuration remains in `config/basm.env` and is not overwritt
 To use a custom data directory, pass `BASM_ROOT` consistently to all commands,
 for example `sudo env BASM_ROOT=/opt/basm-lab ./install.sh`, then choose `local`.
 
-Run the isolated networking regression test without root or Docker:
+Run the isolated regression tests without root or Docker:
 
 ```bash
 bash tests/local-mode.sh
+bash tests/lifecycle.sh
 ```
 
 It requires Bash and `envsubst` (Debian package `gettext-base`) and writes only
 to a temporary directory, which is removed on exit.
+
+## Production prerequisites
+
+- The administrator email is used as the Let's Encrypt account contact. Production
+  rejects reserved addresses such as `admin@example.com` or `*.test`, because Let's
+  Encrypt refuses them and no certificates would be issued.
+- MariaDB first-start initialization can take more than a minute per database;
+  health checks allow up to five minutes before failing the install.
+- Database dumps under `<BASM_ROOT>/data/db-backups` are root-only (`0700`/`0600`).
+
+## Upgrading from basic to full
+
+A basic install runs BASM Core only (ERPNext, Nextcloud, Postal, Traefik, and
+Restic backups). The full profile adds LAMP, WireGuard, and Uptime Kuma:
+
+```bash
+sudo ./install.sh --full
+```
+
+Enter the domain of the install to upgrade, or `local` for the local test setup.
+The upgrade:
+
+- Leaves the running core stack, credentials, and data untouched.
+- Does not run `apt-get` and does not re-pull core images.
+- Reuses the saved module ports. If they conflict with the current port plan,
+  it prompts for new module ports only.
+- Records the new module list in `<BASM_ROOT>/config/basm.env`, starts LAMP and
+  Uptime Kuma, and refreshes the summary.
+
+It is safe to rerun. `sudo ./install.sh --module <name>` adds a single module in
+the same way. In the full wizard, enter `full` at the module menu; a blank
+answer keeps the modules that are already installed.
+
+## Promoting a local test install to production
+
+When testing is complete, replace the local install with a production install:
+
+```bash
+sudo ./install.sh --promote
+```
+
+The command asks for the production domain and requires typing `promote` to
+confirm. It then:
+
+1. Asks the normal production questions (URLs, backup directory, ports),
+   prefilled with the company name, admin email, time zone, Nextcloud admin
+   name, and module selection from the local install.
+2. Stops the local stacks (keeping their data) and creates a fresh production
+   install under `/opt/basm` with new credentials, public bindings, standard
+   ports, HTTPS, and Let's Encrypt.
+3. Only after production starts successfully, removes the local containers,
+   networks, volumes, and `/opt/basm-local` (including local backups stored
+   inside it). Local backups stored elsewhere are kept.
+
+If production setup fails, the partial production install is removed and the
+local install is restarted unchanged, so you can fix the problem and rerun.
+
+Test data is not migrated. Docker images are not removed, so production starts
+from the images already cached locally; Compose only downloads images that are
+missing. System packages are only installed if missing and are never upgraded.
+Promotion refuses to run if a production stack already exists at `/opt/basm`.
+Complete the DNS, router, and mail prerequisites listed in the production
+summary before going live.
+
+All installer runs install only missing system packages, including Docker
+(`apt-get install --no-upgrade`), and skip `apt-get update` when nothing is
+missing. Use `update.sh` when you intentionally want newer images.
 
 ## Upstream project references
 
@@ -188,7 +253,7 @@ The BASM stack intentionally uses upstream projects and their official install g
 
 ## Common maintenance
 
-- Use update.sh to pull new images and recreate services
+- Use update.sh to pull new images and recreate the core and module services
 - Use uninstall.sh to remove the stack and generated volumes
 - Keep backups in a dedicated storage location outside the live service path
 

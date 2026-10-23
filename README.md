@@ -28,7 +28,7 @@ BASM is an opinionated deployment framework that composes open-source services, 
 
 - install.sh: main installer and configuration wizard
 - uninstall.sh: remove BASM services and data
-- update.sh: pull latest images and refresh the stack
+- update.sh: pull latest images and refresh the core and module stacks
 - config/: environment values and generated defaults
 - modules/: modular installers for optional components
 - templates/: Docker and proxy configuration templates
@@ -68,6 +68,18 @@ are stored in `/opt/basm-local/config/basm.env` with root-only permissions. Loca
 Postal SMTP binds only to loopback; it is not an internet mail server. See
 [local installation details](docs/installation.md#local-and-lan-testing)
 for service access, LAN hostname mappings, and mail limitations.
+
+## Upgrading and promoting
+
+- Basic to full: `sudo ./install.sh --full` adds LAMP, WireGuard, and Uptime Kuma
+  to an existing install without touching core services, data, or credentials.
+- Local to production: `sudo ./install.sh --promote` removes the local test
+  stack and its data and creates a fresh production install. It carries over
+  organization settings and the module selection.
+
+Neither path upgrades system packages or re-downloads cached Docker images. See
+[upgrading](docs/installation.md#upgrading-from-basic-to-full) and
+[promoting](docs/installation.md#promoting-a-local-test-install-to-production).
 
 ## Security note
 
@@ -112,5 +124,6 @@ repository is local to the host, so an off-host copy is still required for
 disaster recovery.
 
 The installer and maintenance scripts are executable directly from the checkout.
-Optional LAMP, Uptime Kuma, and WireGuard modules remain opt-in; Fluxer and
-Vaultwarden are placeholders and are not included in the core profile.
+Optional LAMP, Uptime Kuma, and WireGuard modules remain opt-in and make up the
+full profile; LAMP and Uptime Kuma start automatically when selected. Fluxer and
+Vaultwarden are placeholders and are not included in either profile.

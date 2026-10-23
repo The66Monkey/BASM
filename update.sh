@@ -32,12 +32,18 @@ if [[ ! -f "$BASM_ROOT/docker-compose.yml" ]]; then
 fi
 
 log "Pulling latest Docker images"
-docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" pull || fail "Failed to pull new images"
+basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" pull --quiet || fail "Failed to pull new images"
 
 log "Recreating containers with preserved volumes"
-docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" up -d --remove-orphans || fail "Failed to recreate containers"
+basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" up -d --remove-orphans || fail "Failed to recreate containers"
+
+while IFS= read -r compose_file; do
+  log "Updating module stack $compose_file"
+  basm_compose -f "$compose_file" pull --quiet || fail "Failed to pull images for $compose_file"
+  basm_compose -f "$compose_file" up -d --remove-orphans || fail "Failed to recreate $compose_file"
+done < <(module_compose_files "$BASM_ROOT")
 
 log "Validating BASM stack health"
-docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" ps || fail "Stack health validation failed"
+basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" ps || fail "Stack health validation failed"
 
 log "Update completed successfully"
