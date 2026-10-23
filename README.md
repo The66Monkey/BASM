@@ -43,6 +43,30 @@ BASM is an opinionated deployment framework that composes open-source services, 
 4. Confirm the selected modules.
 5. Review the generated summary under output/installation-summary.txt.
 
+The wizard offers standard ports (HTTP 80 / HTTPS 443), a local test range,
+or advanced custom ports after module selection. Selected ports are saved and
+propagate to Compose mappings, module configs, and summary URLs. See
+[port setup](docs/installation.md#port-setup) for the complete port table.
+
+## Local and LAN testing
+
+Run `sudo ./install.sh`. When asked for your primary domain, enter your domain
+(for example, `example.com`) or enter `local` to choose the local test setup.
+Accept the default `localhost` bind address for loopback-only access. The wizard
+uses HTTP on port 18080 by default for local testing, without public DNS or Let's Encrypt.
+Open http://localhost:18080 or http://127.0.0.1:18080 for Nextcloud;
+ERP and mail routes use http://erp.localhost:18080 and http://mail.localhost:18080.
+
+To allow LAN clients, enter the server's private IPv4 address (for example,
+`192.168.1.50`) at the local bind-address question instead of accepting localhost.
+Wildcard and public bindings are rejected. Do not forward these ports on a router.
+
+Local mode keeps separate configuration, container names, and data under
+`/opt/basm-local`. It does not complete the existing upstream ERPNext/Postal
+provisioning or turn placeholder modules into working applications.
+See [local installation details](docs/installation.md#local-and-lan-testing)
+for LAN hostname mappings, module behavior, and maintenance commands.
+
 ## Security note
 
 Use strong admin passwords, keep SSH access locked down, and point DNS and router forwarding at your public IP before bringing services live.

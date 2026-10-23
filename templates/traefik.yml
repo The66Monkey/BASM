@@ -1,22 +1,3 @@
-entryPoints:
-  web:
-    address: ":${HTTP_PORT}"
-  websecure:
-    address: ":${HTTPS_PORT}"
-
-providers:
-  docker:
-    exposedByDefault: false
-  file:
-    filename: "/etc/traefik/dynamic.yml"
-
-log:
-  level: INFO
-
-api:
-  dashboard: true
-  insecure: true
-
 http:
   routers:
     erp:
@@ -54,10 +35,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://nextcloud:80"
-
-certificatesResolvers:
-  letsencrypt:
-    acme:
-      email: "${ADMIN_EMAIL}"
-      storage: "/etc/traefik/acme.json"
-      tlsChallenge: {}

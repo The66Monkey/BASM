@@ -1,0 +1,30 @@
+http:
+  routers:
+    erp:
+      rule: "Host(`${ERP_URL}`)"
+      service: erp-service
+      entryPoints:
+        - web
+    mail:
+      rule: "Host(`${MAIL_URL}`)"
+      service: mail-service
+      entryPoints:
+        - web
+    cloud:
+      rule: "Host(`${CLOUD_URL}`) || Host(`localhost`) || Host(`127.0.0.1`) || Host(`${BIND_ADDRESS}`)"
+      service: cloud-service
+      entryPoints:
+        - web
+  services:
+    erp-service:
+      loadBalancer:
+        servers:
+          - url: "http://erpnext:8080"
+    mail-service:
+      loadBalancer:
+        servers:
+          - url: "http://postal:5000"
+    cloud-service:
+      loadBalancer:
+        servers:
+          - url: "http://nextcloud:80"

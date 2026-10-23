@@ -12,9 +12,8 @@ module_install() {
   ensure_dir "$BASM_ROOT/data/restic"
   ensure_dir "$BASM_ROOT/data/traefik"
 
-  cp "$ROOT_DIR/config/basm.env" "$BASM_ROOT/config/basm.env"
-  envsubst < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
-  envsubst < "$ROOT_DIR/templates/traefik.yml" > "$BASM_ROOT/config/traefik.yml"
+  cp "${BASM_ENV_FILE:-$ROOT_DIR/config/basm.env}" "$BASM_ROOT/config/basm.env"
+  render_stack
 
   if command -v docker >/dev/null 2>&1; then
     log "Starting BASM Docker stack"

@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODULES_DIR="$ROOT_DIR/modules"
+TEST_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEST_DIR"' EXIT
+source "$ROOT_DIR/modules/core.sh"
+
+(
+set_port_defaults standard
+[[ "$HTTP_PORT" == 80 && "$HTTPS_PORT" == 443 && "$LAMP_PORT" == 8080 ]]
+BASM_MODULES='basm lamp uptime-kuma wireguard'
+validate_port_plan
+LAMP_PORT=80
+if validate_port_plan; then exit 1; fi
+set_port_defaults local
+[[ "$HTTP_PORT" == 18080 && "$UPTIME_KUMA_PORT" == 18301 && "$WIREGUARD_PORT" == 18520 ]]
+validate_port_plan
+DEPLOYMENT_MODE=local
+configure_ports < <(printf 'custom\n9000\n9443\n9001\n9301\n51822\n')
+[[ "$HTTP_PORT" == 9000 && "$HTTPS_PORT" == 9443 && "$LAMP_PORT" == 9001 && "$UPTIME_KUMA_PORT" == 9301 && "$WIREGUARD_PORT" == 51822 ]]
+for port in 0 65536 080 abc; do
+  if validate_port "$port"; then exit 1; fi
+done
+)
+
+for address in 127.0.0.1 10.0.0.5 192.168.1.5 172.16.0.1 172.31.255.254; do
+  validate_local_bind_address "$address"
+done
+for address in 0.0.0.0 8.8.8.8 172.32.0.1 192.168.1.256 10.00.0.1 localhost ::1; do
+  if validate_local_bind_address "$address"; then
+    printf 'Unsafe address accepted: %s\n' "$address" >&2
+    exit 1
+  fi
+done
+
+[[ "$(printf 'not-a-port\n8080\n' | prompt_value Port 80 '[[ "$1" =~ ^[0-9]+$ ]]')" == 8080 ]]
+[[ "$(printf 'invalid\nadmin@example.com\n' | prompt_value Email '' 'validate_email "$1"')" == admin@example.com ]]
+
+export LOCAL_BASM_ROOT="$TEST_DIR/stack"
+CONFIG_DIR="$TEST_DIR/config"
+OUTPUT_DIR="$TEST_DIR/output"
+BASM_ENV_FILE="$CONFIG_DIR/local.env"
+mkdir -p "$CONFIG_DIR" "$OUTPUT_DIR" "$LOCAL_BASM_ROOT/config"
+printf 'COMPANY_NAME="Production sentinel"\n' > "$CONFIG_DIR/basm.env"
+port_in_use() { return 1; }
+
+for address in 127.0.0.1 192.168.1.50; do
+  if [[ "$address" == 127.0.0.1 ]]; then
+    run_wizard < <(printf 'local\n\n\n\n\n2 6\n\n')
+  else
+    run_wizard < <(printf 'local\n%s\n\n\n\n2 6\n\n' "$address")
+  fi
+  render_stack
+  [[ "$BIND_ADDRESS" == "$address" ]]
+  [[ "$BASM_ROOT" == "$LOCAL_BASM_ROOT" ]]
+  [[ "$BACKUP_LOCATION" == "$LOCAL_BASM_ROOT/backups" ]]
+  [[ "$(< "$CONFIG_DIR/basm.env")" == 'COMPANY_NAME="Production sentinel"' ]]
+  grep -Fq "\"$address:18080:80\"" "$BASM_ROOT/docker-compose.yml"
+  grep -Fq "\"$address:18443:443\"" "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'container_name: basm-local-traefik' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'address: ":80"' "$BASM_ROOT/config/traefik-static.yml"
+  grep -Fq -- '--configfile=/etc/traefik/static.yml' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq '/config/traefik.yml:/etc/traefik/dynamic.yml:ro' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq 'Host(`127.0.0.1`)' "$BASM_ROOT/config/traefik.yml"
+  if grep -Eq 'acme|letsencrypt|certResolver|websecure|\$\{' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
+  if [[ "$address" == 127.0.0.1 ]]; then
+    [[ "$ERP_URL" == erp.localhost ]]
+  else
+    [[ "$ERP_URL" == erp.basm.test ]]
+  fi
+  for module_name in lamp uptime-kuma; do
+    source "$ROOT_DIR/modules/$module_name.sh"
+    module_install
+  done
+  grep -Fq "\"$address:18081:80\"" "$BASM_ROOT/modules/lamp/docker-compose.yml"
+  grep -Fq "\"$address:18301:3001\"" "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml"
+  write_summary
+  grep -Fq "http://$ERP_URL:18080" "$OUTPUT_DIR/local-installation-summary.txt"
+done
+
+unset BIND_ADDRESS BASM_CONTAINER_PREFIX
+DEPLOYMENT_MODE=production
+set_port_defaults standard
+render_stack
+grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
+grep -Fq 'container_name: basm-traefik' "$BASM_ROOT/docker-compose.yml"
+grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
+source "$ROOT_DIR/modules/lamp.sh"
+module_install
+grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
+PRODUCTION_BASM_ROOT="$TEST_DIR/production"
+select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
+[[ "$LOCAL_MODE" == false ]]
+[[ "$PRIMARY_DOMAIN" == business.example ]]
+[[ "$BASM_ENV_FILE" == "$CONFIG_DIR/basm.env" ]]
+[[ "$BASM_ROOT" == "$PRODUCTION_BASM_ROOT" ]]
+[[ "$COMPANY_NAME" == 'Production sentinel' ]]
+
+run_wizard < <(printf 'local\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n19081\n51825\n19301\n')
+[[ "$PORT_PROFILE" == custom ]]
+unset HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
+set -a
+source "$BASM_ENV_FILE"
+set +a
+render_stack
+grep -Fq '"127.0.0.1:19080:80"' "$BASM_ROOT/docker-compose.yml"
+grep -Fq '"127.0.0.1:19443:443"' "$BASM_ROOT/docker-compose.yml"
+for module_name in lamp wireguard uptime-kuma; do
+  source "$ROOT_DIR/modules/$module_name.sh"
+  module_install
+done
+grep -Fq '"127.0.0.1:19081:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
+grep -Fq '"127.0.0.1:19301:3001"' "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml"
+grep -Fq 'ListenPort = 51825' "$BASM_ROOT/modules/wireguard/config.conf"
+write_summary
+grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.txt"
+grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
+if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
+
+run_wizard < <(printf 'business.example\n\n\n\n\n\n\n2 3 6\nstandard\n')
+mkdir -p "$BASM_ROOT/config"
+render_stack
+write_summary
+[[ "$HTTP_PORT" == 80 && "$HTTPS_PORT" == 443 && "$LAMP_PORT" == 8080 && "$UPTIME_KUMA_PORT" == 3001 && "$WIREGUARD_PORT" == 51820 ]]
+grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
+grep -Fq 'https://erp.business.example:443' "$OUTPUT_DIR/installation-summary.txt"
+grep -Fq 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
+if grep -Eq '^(entryPoints|certificatesResolvers):' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
+port_in_use() { return 1; }
+configure_ports < <(printf 'custom\n19080\n19443\n19081\n51825\n19301\n')
+render_stack
+write_summary
+grep -Fq 'https://erp.business.example:19443' "$OUTPUT_DIR/installation-summary.txt"
+grep -Fq '"0.0.0.0:19443:443"' "$BASM_ROOT/docker-compose.yml"
+(
+  HTTP_PORT="$LAMP_PORT"
+  BASM_MODULES=basm
+  if (run_module_install lamp); then exit 1; fi
+)
+printf 'Local mode tests passed.\n'
