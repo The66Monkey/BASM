@@ -1,6 +1,6 @@
 # BASM
 
-BASM (Business, Accounting, Storage, Mail) is a reference architecture and deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
+BASM (Business, Accounting, Storage, Mail) is a reference architecture and opinionated deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
 
 ## What BASM is
 
