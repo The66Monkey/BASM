@@ -49,9 +49,11 @@ chosen bind address, domain, or HTTP/TLS mode.
 | Uptime Kuma HTTP (TCP) | 3001 | 18301 |
 | WireGuard ListenPort (UDP) | 51820 | 18520 |
 
-`custom` prompts for HTTP, HTTPS, SMTP, and the selected modules' ports. Values must
+`custom` prompts for HTTP, HTTPS, SMTP, and all full-profile modules' ports,
+even on a basic install, so future services have a reusable port plan. Values must
 be between 1 and 65535. Duplicate TCP mappings, including collisions with the
-recorded host SSH port, are rejected. Existing host listeners produce warnings;
+recorded host SSH port and future full-profile services, are rejected by the
+wizard. Existing host listeners produce warnings;
 stop the current owner or choose custom ports before starting a conflicting
 service. SSH is not changed by any profile. WireGuard's port is written to its
 generated configuration; the module does not start a VPN server.
@@ -192,6 +194,26 @@ Restic backups). The full profile adds LAMP, WireGuard, and Uptime Kuma:
 ```bash
 sudo ./install.sh --full
 ```
+
+The basic install prepares the upgrade without starting optional services:
+
+- `<BASM_ROOT>/config/basm.env` is the root-only, machine-readable source used
+  by the installer for all ports, bindings, domains, credentials, and module selection.
+- `<BASM_ROOT>/config/prepared-modules/lamp/` and
+  `<BASM_ROOT>/config/prepared-modules/uptime-kuma/` contain ready-to-use Compose
+  YAML. The LAMP directory also contains its initial web page.
+- `<BASM_ROOT>/config/prepared-modules/wireguard/` contains `config.conf` and
+  `peer1.conf` with generated keys and the selected endpoint/UDP port, mode `0600`.
+- The summary lists the inactive module ports and configuration locations.
+
+Prepared directories are separate from active modules, so maintenance commands
+do not start or update them. On selection, the installer moves each prepared
+directory into `<BASM_ROOT>/modules/`, refreshes its ports/bindings from the saved
+environment, and preserves its contents and WireGuard keys. The saved environment,
+not the human-readable summary or log, is authoritative. WireGuard's generated
+server and peer endpoint ports stay synchronized on reruns; it still requires
+manual server setup. Treat prepared WireGuard files as secrets and include the
+deployment configuration in backups.
 
 Enter the domain of the install to upgrade, or `local` for the local test setup.
 The upgrade:

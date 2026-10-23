@@ -3,17 +3,18 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/core.sh"
 
 module_install() {
+  local module_dir="${1:-$BASM_ROOT/modules/lamp}"
   log "Installing LAMP module"
   ensure_port_defaults
-  ensure_dir "$BASM_ROOT/modules/lamp/www"
-  if [[ -z "$(ls -A "$BASM_ROOT/modules/lamp/www")" ]]; then
-    cat > "$BASM_ROOT/modules/lamp/www/index.html" <<HTML
+  ensure_dir "$module_dir/www" || return
+  if [[ -z "$(ls -A "$module_dir/www")" ]]; then
+    cat > "$module_dir/www/index.html" <<HTML || return
 <!doctype html>
 <title>${COMPANY_NAME:-BASM}</title>
 <p>The BASM LAMP module is running. Replace the files in $BASM_ROOT/modules/lamp/www with your site.</p>
 HTML
   fi
-  cat > "$BASM_ROOT/modules/lamp/docker-compose.yml" <<EOT
+  cat > "$module_dir/docker-compose.yml" <<EOT || return
 name: ${BASM_CONTAINER_PREFIX:-basm}-lamp
 services:
   lamp:

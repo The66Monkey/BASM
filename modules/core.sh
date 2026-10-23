@@ -221,13 +221,16 @@ configure_ports() {
   local -a custom_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
   ensure_port_defaults
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then default_profile=local; fi
-  for module_name in ${BASM_MODULES:-basm}; do
+  for module_name in ${BASM_MODULES:-basm} $BASM_FULL_MODULES; do
     case "$module_name" in
-      lamp) custom_ports+=(LAMP_PORT) ;;
-      uptime-kuma) custom_ports+=(UPTIME_KUMA_PORT) ;;
-      wireguard) custom_ports+=(WIREGUARD_PORT) ;;
+      lamp) variable=LAMP_PORT ;;
+      uptime-kuma) variable=UPTIME_KUMA_PORT ;;
+      wireguard) variable=WIREGUARD_PORT ;;
+      *) continue ;;
     esac
+    [[ " ${custom_ports[*]} " == *" $variable "* ]] || custom_ports+=("$variable")
   done
+  printf 'Port setup also prepares the ports for future full-profile modules; unselected services remain stopped.\n'
   while true; do
     PORT_PROFILE="$(prompt_value "Port setup: standard, local test range, or custom (advanced)" "$default_profile" '[[ "$1" == standard || "$1" == local || "$1" == custom ]]')"
     if [[ "$PORT_PROFILE" != custom ]]; then
@@ -238,7 +241,7 @@ configure_ports() {
         printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
       done
     fi
-    if validate_port_plan; then break; fi
+    if (BASM_MODULES="${BASM_MODULES:-basm} $BASM_FULL_MODULES"; validate_port_plan); then break; fi
     warn "Choose a port profile again to resolve the conflict."
   done
   for variable in "${custom_ports[@]}"; do
@@ -601,8 +604,20 @@ configure_system() {
 
   render_stack
   render_postal_config
+  prepare_full_profile
 
   log "System setup complete"
+}
+
+prepare_full_profile() {
+  local module_name
+  for module_name in $BASM_FULL_MODULES; do
+    module_selected "$module_name" && continue
+    (
+      source "$MODULES_DIR/$module_name.sh"
+      module_install "$BASM_ROOT/config/prepared-modules/$module_name"
+    ) || fail "Could not prepare configuration for '$module_name'."
+  done
 }
 
 install_selected_modules() {
@@ -632,6 +647,12 @@ run_module_install() {
   fi
 
   log "Running module installer: $module_name"
+  local prepared_dir="$BASM_ROOT/config/prepared-modules/$module_name"
+  local module_dir="$BASM_ROOT/modules/$module_name"
+  if [[ -d "$prepared_dir" && ! -e "$module_dir" ]]; then
+    ensure_dir "$BASM_ROOT/modules"
+    mv "$prepared_dir" "$module_dir" || fail "Could not activate prepared configuration for '$module_name'."
+  fi
   unset -f module_install module_start
   source "$script_path"
   if declare -F module_install >/dev/null; then
@@ -829,7 +850,8 @@ port_summary() {
   printf 'Proxy HTTP: %s/tcp\nProxy HTTPS: %s/tcp\n' "$HTTP_PORT" "$HTTPS_PORT"
   printf 'Postal SMTP: %s/tcp\n' "$SMTP_PORT"
   printf 'Host SSH (unchanged): %s/tcp\n' "${SSH_PORT:-22}"
-  local module_name host="$BIND_ADDRESS"
+  printf 'Reusable install settings: %s/config/basm.env (root-only)\n' "$BASM_ROOT"
+  local module_name variable protocol host="$BIND_ADDRESS"
   if [[ "$host" == 0.0.0.0 ]]; then host="$PRIMARY_DOMAIN"; fi
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
@@ -837,6 +859,15 @@ port_summary() {
       uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
     esac
+  done
+  for module_name in $BASM_FULL_MODULES; do
+    module_selected "$module_name" && continue
+    variable="$(module_port_variable "$module_name")"
+    [[ -n "$variable" ]] || continue
+    protocol=tcp
+    if [[ "$module_name" == wireguard ]]; then protocol=udp; fi
+    printf 'Prepared %s port (not active): %s/%s; config: %s/config/prepared-modules/%s\n' \
+      "$module_name" "${!variable}" "$protocol" "$BASM_ROOT" "$module_name"
   done
 }
 

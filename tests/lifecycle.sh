@@ -27,7 +27,7 @@ OUTPUT_DIR="$TEST_DIR/output"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
-run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\n\n')
+run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n')
 [[ "$BASM_MODULES" == basm ]]
 configure_system
 install_selected_modules
@@ -36,18 +36,62 @@ write_summary
 grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml" "$DOCKER_LOG"
 if grep -Eq '(^| )pull( |$)' "$DOCKER_LOG"; then exit 1; fi
 LOCAL_DB_PASSWORD="$DB_ROOT_PASSWORD"
+PREPARED_DIR="$LOCAL_BASM_ROOT/config/prepared-modules"
+[[ ! -e "$LOCAL_BASM_ROOT/modules/lamp" && ! -e "$LOCAL_BASM_ROOT/modules/wireguard" && ! -e "$LOCAL_BASM_ROOT/modules/uptime-kuma" ]]
+[[ -z "$(module_compose_files)" ]]
+grep -Fq '"127.0.0.1:19081:80"' "$PREPARED_DIR/lamp/docker-compose.yml"
+grep -Fq '"127.0.0.1:19301:3001"' "$PREPARED_DIR/uptime-kuma/docker-compose.yml"
+grep -Fq 'ListenPort = 51825' "$PREPARED_DIR/wireguard/config.conf"
+grep -Fq 'Endpoint = 127.0.0.1:51825' "$PREPARED_DIR/wireguard/peer1.conf"
+[[ "$(stat -c '%a' "$PREPARED_DIR/wireguard/config.conf")" == 600 ]]
+[[ "$(stat -c '%a' "$PREPARED_DIR/wireguard/peer1.conf")" == 600 ]]
+grep -Fq 'Prepared lamp port (not active): 19081/tcp' "$OUTPUT_DIR/local-installation-summary.txt"
+if grep -Fq '/modules/' "$DOCKER_LOG"; then exit 1; fi
+PREPARED_KEY="$(grep '^PrivateKey' "$PREPARED_DIR/wireguard/config.conf")"
+PREPARED_PEER="$(cat "$PREPARED_DIR/wireguard/peer1.conf")"
+LAMP_CONFIG="$(cat "$PREPARED_DIR/lamp/docker-compose.yml")"
+KUMA_CONFIG="$(cat "$PREPARED_DIR/uptime-kuma/docker-compose.yml")"
+CORE_CHECKSUM="$(sha256sum "$LOCAL_BASM_ROOT/docker-compose.yml")"
+prepare_full_profile
+[[ "$(grep '^PrivateKey' "$PREPARED_DIR/wireguard/config.conf")" == "$PREPARED_KEY" ]]
+
+(
+  BASM_ROOT="$TEST_DIR/production-preparation"
+  DEPLOYMENT_MODE=production
+  BIND_ADDRESS=0.0.0.0
+  BASM_CONTAINER_PREFIX=basm
+  PRIMARY_DOMAIN=acme.example
+  set_port_defaults standard
+  prepare_full_profile
+  grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/config/prepared-modules/lamp/docker-compose.yml"
+  grep -Fq '"0.0.0.0:3001:3001"' "$BASM_ROOT/config/prepared-modules/uptime-kuma/docker-compose.yml"
+  grep -Fq 'Endpoint = acme.example:51820' "$BASM_ROOT/config/prepared-modules/wireguard/peer1.conf"
+  [[ ! -e "$BASM_ROOT/modules" ]]
+  run_module_install lamp
+  [[ -f "$BASM_ROOT/modules/lamp/docker-compose.yml" && ! -e "$BASM_ROOT/config/prepared-modules/lamp" ]]
+  [[ -f "$BASM_ROOT/config/prepared-modules/uptime-kuma/docker-compose.yml" ]]
+)
+: > "$DOCKER_LOG"
 
 # Basic -> full keeps core untouched and starts the runnable modules.
 : > "$DOCKER_LOG"
+unset HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT WIREGUARD_PORT UPTIME_KUMA_PORT
 select_deployment < <(printf 'local\n')
 load_deployment_env
 upgrade_to_full
+[[ "$HTTP_PORT" == 19080 && "$HTTPS_PORT" == 19443 && "$SMTP_PORT" == 12525 ]]
+[[ "$LAMP_PORT" == 19081 && "$WIREGUARD_PORT" == 51825 && "$UPTIME_KUMA_PORT" == 19301 ]]
+[[ "$(sha256sum "$LOCAL_BASM_ROOT/docker-compose.yml")" == "$CORE_CHECKSUM" ]]
+[[ "$(cat "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml")" == "$LAMP_CONFIG" ]]
+[[ "$(cat "$LOCAL_BASM_ROOT/modules/uptime-kuma/docker-compose.yml")" == "$KUMA_CONFIG" ]]
+[[ "$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")" == "$PREPARED_KEY" ]]
+[[ "$(cat "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf")" == "$PREPARED_PEER" ]]
 grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma"' "$LOCAL_BASM_ROOT/config/basm.env"
 grep -Fqx "DB_ROOT_PASSWORD=\"$LOCAL_DB_PASSWORD\"" "$LOCAL_BASM_ROOT/config/basm.env"
 [[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/config/basm.env")" == 600 ]]
 grep -Fq 'name: basm-local-lamp' "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml"
-grep -Fq '"127.0.0.1:18081:80"' "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml"
-grep -Fq 'ListenPort = 18520' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"
+grep -Fq '"127.0.0.1:19081:80"' "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml"
+grep -Fq 'ListenPort = 51825' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"
 grep -Fq "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml up -d" "$DOCKER_LOG"
 grep -Fq "$LOCAL_BASM_ROOT/modules/uptime-kuma/docker-compose.yml up -d" "$DOCKER_LOG"
 if grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml" "$DOCKER_LOG"; then exit 1; fi
@@ -82,11 +126,21 @@ grep -Fq -- '- ./www:/var/www/html' "$LOCAL_BASM_ROOT/modules/lamp/docker-compos
 [[ -s "$LOCAL_BASM_ROOT/modules/lamp/www/index.html" ]]
 if grep -q CHANGE_ME "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"; then exit 1; fi
 grep -Eq '^PrivateKey = [A-Za-z0-9+/]{43}=$' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"
-grep -Fq 'Endpoint = 127.0.0.1:18520' "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf"
+grep -Fq 'Endpoint = 127.0.0.1:51825' "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf"
 [[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf")" == 600 ]]
 WG_KEY="$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")"
 ( source "$ROOT_DIR/modules/wireguard.sh"; module_install )
 [[ "$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")" == "$WG_KEY" ]]
+(
+  source "$ROOT_DIR/modules/wireguard.sh"
+  WIREGUARD_PORT=51826
+  BIND_ADDRESS=192.168.1.50
+  module_install
+  grep -Fq 'ListenPort = 51826' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"
+  grep -Fq 'Endpoint = 192.168.1.50:51826' "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf"
+  [[ "$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")" == "$WG_KEY" ]]
+)
+( source "$ROOT_DIR/modules/wireguard.sh"; module_install )
 [[ "$(grep -c 'start_period: 300s' "$LOCAL_BASM_ROOT/docker-compose.yml")" == 3 ]]
 if grep -Fq docker.sock "$LOCAL_BASM_ROOT/docker-compose.yml"; then exit 1; fi
 grep -Fq 'NEXTCLOUD_TRUSTED_DOMAINS: "cloud.localhost localhost 127.0.0.1"' "$LOCAL_BASM_ROOT/docker-compose.yml"

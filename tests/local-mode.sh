@@ -23,6 +23,12 @@ configure_ports < <(printf 'custom\n9000\n9443\n2526\n9001\n9301\n51822\n')
 for port in 0 65536 080 abc; do
   if validate_port "$port"; then exit 1; fi
 done
+
+# A base install plans all future module ports and rejects future TCP collisions.
+BASM_MODULES=basm
+configure_ports < <(printf 'custom\n9000\n9443\n2526\n9000\n51822\n9301\ncustom\n9000\n9443\n2526\n9001\n51822\n9301\n')
+[[ "$BASM_MODULES" == basm ]]
+[[ "$LAMP_PORT" == 9001 && "$WIREGUARD_PORT" == 51822 && "$UPTIME_KUMA_PORT" == 9301 ]]
 )
 
 for address in 127.0.0.1 10.0.0.5 192.168.1.5 172.16.0.1 172.31.255.254; do

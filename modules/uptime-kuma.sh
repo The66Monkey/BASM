@@ -3,10 +3,11 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/core.sh"
 
 module_install() {
+  local module_dir="${1:-$BASM_ROOT/modules/uptime-kuma}"
   log "Installing Uptime Kuma module"
   ensure_port_defaults
-  ensure_dir "$BASM_ROOT/modules/uptime-kuma"
-  cat > "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml" <<EOF
+  ensure_dir "$module_dir" || return
+  cat > "$module_dir/docker-compose.yml" <<EOF || return
 name: ${BASM_CONTAINER_PREFIX:-basm}-uptime-kuma
 services:
   uptime-kuma:

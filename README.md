@@ -73,6 +73,10 @@ for service access, LAN hostname mappings, and mail limitations.
 
 - Basic to full: `sudo ./install.sh --full` adds LAMP, WireGuard, and Uptime Kuma
   to an existing install without touching core services, data, or credentials.
+  The basic install saves ports for the full profile and stages Compose YAML
+  and WireGuard server/client configs under
+  `<BASM_ROOT>/config/prepared-modules/`. These services stay inactive until
+  selected; upgrading reuses the settings and generated WireGuard keys.
 - Local to production: `sudo ./install.sh --promote` removes the local test
   stack and its data and creates a fresh production install. It carries over
   organization settings and the module selection.
