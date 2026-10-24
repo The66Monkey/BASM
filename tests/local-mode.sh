@@ -149,7 +149,23 @@ grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.tx
 grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
 if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
 
-run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\n2 3 6\nstandard\n')
+run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\nnon-static\nshort\nabcdefghijklmnopqrstuvwxyz12\n2 3 6\nstandard\n')
+grep -Fqx 'IP_MODE="non-static"' "$BASM_ENV_FILE"
+grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
+(
+  BASM_CRON_DIR="$TEST_DIR/cron.d"
+  systemctl() { :; }
+  curl() { if [[ "$*" == *api.ipify.org* ]]; then printf '203.0.113.7'; else { cat; printf '%s\n' "$*"; } > "$TEST_DIR/curl-request"; fi; }
+  export -f curl
+  export TEST_DIR
+  install_ddns_updater
+  grep -Fq "17 */4 * * * root /bin/bash \"$BASM_ROOT/maintenance/ddns-update.sh\" \"$BASM_ROOT\"" "$(ddns_cron_file "$BASM_ROOT")"
+  [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
+  grep -Fq 'Authorization: Token abcdefghijklmnopqrstuvwxyz12' "$TEST_DIR/curl-request"
+  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,mail.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
+  IP_MODE=static install_ddns_updater
+  [[ ! -e "$(ddns_cron_file "$BASM_ROOT")" && ! -e "$BASM_ROOT/maintenance/ddns-update.sh" ]]
+)
 mkdir -p "$BASM_ROOT/config"
 render_stack
 write_summary

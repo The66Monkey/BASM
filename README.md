@@ -24,9 +24,29 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 
 ## Quick start
 
+A production install needs a **static public IPv4 address** from your ISP and a
+DNS domain (for example from [deSEC](https://desec.io)). The domain, mail server,
+and Let's Encrypt certificates all depend on DNS records that point to that IP;
+if the IP changes and the records are not updated, the services become
+unreachable and mail delivery fails. Mail servers also need a stable IP for
+reverse DNS (PTR) and sender reputation, so ask your ISP for a static IP whenever
+possible.
+
+If you cannot get a static IP, answer `non-static` when the wizard asks for the
+public IP type and enter a deSEC API token. BASM then installs a cron job
+(`/etc/cron.d/basm-ddns-*`) that checks the public IPv4 every 4 hours and,
+when it changes, updates the deSEC A records for the primary domain and the
+ERP, mail, and cloud hostnames. Most home IPs change rarely, so this light
+schedule is enough; after a change, external access can be down for up to
+about 4 hours until the next check. The token is stored only in the root-only
+`<BASM_ROOT>/config/basm.env`, and changes are logged to
+`<BASM_ROOT>/logs/ddns.log`. The domain must be managed by deSEC, and all
+hostnames must belong to the same deSEC domain. Expect possible mail
+deliverability problems on a dynamic IP.
+
 1. Clone or copy this project to a fresh Debian server.
 2. Run: sudo ./install.sh
-3. Complete the setup wizard.
+3. Complete the setup wizard, choosing `static` or `non-static` public IP.
 4. Confirm the selected modules.
 5. Review the generated summary under output/installation-summary.txt.
 6. Securely hand the owner the generated **For the User** document and give
@@ -63,16 +83,9 @@ For local testing, use `/opt/basm-local` instead of `/opt/basm`. A custom
 and both documents have mode `0600`: only root can read them by default.
 Passwords are never printed in the installation summary or installer log.
 
-The installer must deliver the user document securely, such as in the owner's
-password manager or as a printed copy stored in a locked place. The owner
-should not need to search configuration files or use a terminal. Keep an
-independent secure copy of the backup password away from the server. Do not
-email these documents or commit generated credentials to this repository.
-
-Installation reruns and module upgrades regenerate the documents from saved
-BASM settings. Password changes made inside applications must be recorded in
-the password manager separately; BASM cannot retrieve those changed values.
-Router, Debian, domain-provider, and employee accounts are not created by BASM.
+The generated handover documents contain service addresses, credentials, and backup information.
+Re-running the installer or upgrading modules regenerates the documents from the saved BASM configuration.
+Passwords changed within applications must be recorded separately, as BASM cannot retrieve them.
 
 ## Local and LAN testing
 
@@ -147,10 +160,6 @@ the month field from `1,7` to `1,4,7,10` in this deployment's cron file; install
 reruns restore the six-month schedule. Run `sudo ./update.sh` from the checkout
 for an immediate manual update after confirming a usable backup. Manual runs
 use the same overlap lock but do not create the scheduled pre-update snapshot.
-
-## Security note
-
-Use strong admin passwords, keep SSH access locked down, and point DNS and router forwarding at your public IP before bringing services live.
 
 ## License
 

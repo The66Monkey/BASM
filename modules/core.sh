@@ -158,6 +158,10 @@ validate_port() {
   [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
 }
 
+validate_desec_token() {
+  [[ "$1" =~ ^[A-Za-z0-9._~+/=-]{16,128}$ ]]
+}
+
 ensure_port_defaults() {
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
   local default_smtp=25
@@ -472,6 +476,8 @@ WIREGUARD_PORT=$WIREGUARD_PORT
 ERP_URL="$ERP_URL"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
+IP_MODE="${IP_MODE:-static}"
+DESEC_TOKEN="${DESEC_TOKEN:-}"
 BACKUP_LOCATION="$BACKUP_LOCATION"
 BASM_ROOT="$BASM_ROOT"
 BASM_MODULES="$BASM_MODULES"
@@ -535,6 +541,25 @@ run_wizard() {
     ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    IP_MODE="$(prompt_value "Public IP type: static, or non-static (keeps deSEC DNS updated)" "${IP_MODE:-static}" '[[ "$1" == static || "$1" == non-static ]]')"
+    if [[ "$IP_MODE" == non-static ]]; then
+      local token=""
+      for attempt in 1 2 3; do
+        read -rsp "deSEC API token${DESEC_TOKEN:+ (blank keeps the saved token)}: " token
+        printf '\n' >&2
+        token="${token:-${DESEC_TOKEN:-}}"
+        validate_desec_token "$token" && break
+        warn "Enter a valid deSEC token with DNS update rights for $PRIMARY_DOMAIN."
+        token=""
+      done
+      [[ -n "$token" ]] || fail "A valid deSEC token is required for a non-static IP install."
+      DESEC_TOKEN="$token"
+    else
+      DESEC_TOKEN=""
+    fi
+  else
+    IP_MODE=static
+    DESEC_TOKEN=""
   fi
 
   select_modules
@@ -634,6 +659,7 @@ install_selected_modules() {
     run_module_install "$module_name"
   done
   install_auto_updates
+  install_ddns_updater
 }
 
 update_cron_file() {
@@ -672,6 +698,36 @@ EOF
   chmod 644 "$cron_file" || fail "Cannot set cron permissions."
   systemctl enable --now cron || fail "Cannot enable the automatic update scheduler."
   log "Automatic application updates scheduled for January 1 and July 1 at 03:00 (server time)."
+)
+
+ddns_cron_file() {
+  local identifier
+  identifier="$(printf '%s' "$1" | sha256sum | cut -c1-16)"
+  printf '%s/basm-ddns-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
+}
+
+# Non-static IP installs check the public IPv4 every 4 hours and update deSEC.
+install_ddns_updater() (
+  umask 077
+  local maintenance_dir="$BASM_ROOT/maintenance" cron_file
+  cron_file="$(ddns_cron_file "$BASM_ROOT")"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local || "${IP_MODE:-static}" != non-static ]]; then
+    rm -f "$cron_file" "$maintenance_dir/ddns-update.sh"
+    return 0
+  fi
+  [[ "$BASM_ROOT" != *%* ]] || fail "Deployment path cannot contain a percent sign."
+  install -d -m 700 "$maintenance_dir" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
+  install -m 700 "$ROOT_DIR/templates/ddns-update.sh" "$maintenance_dir/ddns-update.sh" || fail "Cannot install the deSEC DNS updater."
+  mkdir -p "$(dirname "$cron_file")" || fail "Cannot create cron directory."
+  cat > "$cron_file" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 */4 * * * root /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT"
+EOF
+  chmod 644 "$cron_file" || fail "Cannot set cron permissions."
+  systemctl enable --now cron || fail "Cannot enable the DNS update scheduler."
+  /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT" || warn "Initial deSEC DNS update failed; see $BASM_ROOT/logs/ddns.log. Cron retries every 4 hours."
+  log "deSEC DNS updates scheduled every 4 hours for the non-static public IP."
 )
 
 run_module_install() {
@@ -770,6 +826,7 @@ upgrade_modules() {
     run_module_install "$module_name" || fail "Module '$module_name' failed to install."
   done
   install_auto_updates
+  install_ddns_updater
   write_summary
   log "Installed modules: $BASM_MODULES"
 }
@@ -810,7 +867,7 @@ start_deployment() {
 purge_deployment() {
   local root="$1" compose_file
   [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
-  rm -f "$(update_cron_file "$root")"
+  rm -f "$(update_cron_file "$root")" "$(ddns_cron_file "$root")"
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
       log "Stopping module stack $compose_file"
@@ -1079,7 +1136,9 @@ At the domain provider, create DNS A records pointing to that public IPv4:
   $MAIL_URL
   $CLOUD_URL
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
-unless IPv6 routing and firewall rules have also been configured and tested.
+unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '\n%s' \
+  "This install uses a non-static IP: every 4 hours cron updates these deSEC" \
+  "records if the public IPv4 changed. Log: $BASM_ROOT/logs/ddns.log"; fi)
 
 4. FORWARD THE ROUTER PORTS
 Open NAT / Port Forwarding / Virtual Server. Add one rule per line below.
