@@ -41,7 +41,7 @@ ensure_dir() {
 }
 
 BASM_FULL_MODULES="basm lamp wireguard uptime-kuma"
-BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl"
+BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux"
 
 package_installed() {
   dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
@@ -633,7 +633,46 @@ install_selected_modules() {
   for module_name in $selected_modules; do
     run_module_install "$module_name"
   done
+  install_auto_updates
 }
+
+update_cron_file() {
+  local identifier
+  identifier="$(printf '%s' "$1" | sha256sum | cut -c1-16)"
+  printf '%s/basm-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
+}
+
+install_auto_updates() (
+  umask 077
+  local maintenance_dir="$BASM_ROOT/maintenance" cron_file
+  ensure_packages cron util-linux
+  validate_backup_path "$BASM_ROOT" || fail "Deployment path is not safe for cron."
+  [[ "$BASM_ROOT" != *%* ]] || fail "Deployment path cannot contain a percent sign."
+  cron_file="$(update_cron_file "$BASM_ROOT")"
+  install -d -m 700 "$maintenance_dir" "$maintenance_dir/modules" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
+  install -m 700 "$ROOT_DIR/update.sh" "$maintenance_dir/update.sh" || fail "Cannot install updater."
+  install -m 600 "$ROOT_DIR/modules/core.sh" "$maintenance_dir/modules/core.sh" || fail "Cannot install updater helpers."
+  cat > "$maintenance_dir/run-updates.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+if [[ -e "$BASM_ROOT/config/disable-auto-updates" ]]; then exit 0; fi
+exec >> "$BASM_ROOT/logs/automatic-updates.log" 2>&1
+printf '\\nScheduled BASM update started at %s\\n' "\$(date -Is)"
+exec /bin/bash "$maintenance_dir/update.sh" --scheduled "$BASM_ROOT"
+EOF
+  chmod 700 "$maintenance_dir/run-updates.sh" || fail "Cannot protect update launcher."
+  mkdir -p "$(dirname "$cron_file")" || fail "Cannot create cron directory."
+  cat > "$cron_file" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 3 1 1,7 * root /bin/bash "$maintenance_dir/run-updates.sh"
+EOF
+  chmod 644 "$cron_file" || fail "Cannot set cron permissions."
+  systemctl enable --now cron || fail "Cannot enable the automatic update scheduler."
+  log "Automatic application updates scheduled for January 1 and July 1 at 03:00 (server time)."
+)
 
 run_module_install() {
   local module_name="$1"
@@ -730,6 +769,7 @@ upgrade_modules() {
     [[ "$module_name" == basm ]] && continue
     run_module_install "$module_name" || fail "Module '$module_name' failed to install."
   done
+  install_auto_updates
   write_summary
   log "Installed modules: $BASM_MODULES"
 }
@@ -770,6 +810,7 @@ start_deployment() {
 purge_deployment() {
   local root="$1" compose_file
   [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
+  rm -f "$(update_cron_file "$root")"
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
       log "Stopping module stack $compose_file"
@@ -871,9 +912,267 @@ port_summary() {
   done
 }
 
+write_handover() (
+  umask 077
+  local handover_dir="$BASM_ROOT/handover"
+  local scheme=https web_port="$HTTPS_PORT"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    scheme=http
+    web_port="$HTTP_PORT"
+  fi
+  [[ ! -L "$handover_dir" ]] || fail "Handover directory must not be a symbolic link."
+  mkdir -p "$handover_dir" || fail "Cannot create handover directory."
+  chmod 700 "$handover_dir" || fail "Cannot protect handover directory."
+  local document
+  for document in for-the-user.txt for-it.txt; do
+    [[ ! -L "$handover_dir/$document" ]] || fail "Handover document must not be a symbolic link."
+  done
+
+  cat > "$handover_dir/for-the-user.txt" <<EOF
+For the User
+============
+Business: $COMPANY_NAME
+Installation: ${DEPLOYMENT_MODE:-production}
+Prepared: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+PRIVATE: This document contains passwords. Keep it in a password manager or
+print it and lock it away. Do not email it or put it in a shared cloud folder.
+Ask your installer to hand you this document securely before they leave.
+
+YOUR SIGN-IN DETAILS
+Open these addresses in your web browser. Passwords are case-sensitive.
+
+Business accounts and operations (ERPNext)
+Address: $scheme://$ERP_URL:$web_port
+Username: Administrator
+Initial password: $ERP_ADMIN_PASSWORD
+
+Files and sharing (Nextcloud)
+Address: $scheme://$CLOUD_URL:$web_port
+Username: $NEXTCLOUD_ADMIN_USER
+Initial password: $NEXTCLOUD_ADMIN_PASSWORD
+
+Mail administration (Postal)
+Address: $scheme://$MAIL_URL:$web_port
+Username: $ADMIN_EMAIL
+Initial password: $POSTAL_ADMIN_PASSWORD
+Postal manages mail delivery; it is not an employee inbox or webmail service.
+The email address above is a login name, not a newly created mailbox.
+
+These are administrator accounts. Ask IT to create a personal account for each
+employee; do not share these administrator passwords for everyday work.
+Passwords shown here are the installation values. If changed in an application,
+record the new value in your password manager. BASM cannot read it back, and
+rerunning the installer does not reset it or update this document from the app.
+
+OTHER ACCOUNTS
+EOF
+  if module_selected uptime-kuma; then
+    cat >> "$handover_dir/for-the-user.txt" <<EOF
+Monitoring (Uptime Kuma): http://$PRIMARY_DOMAIN:$UPTIME_KUMA_PORT
+No account is generated. IT must complete first-time setup on the private
+network and record the chosen username and password in your password manager.
+EOF
+  fi
+  if module_selected lamp; then
+    printf 'Website (LAMP): http://%s:%s - no login is created.\n' "$PRIMARY_DOMAIN" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
+  fi
+  if module_selected wireguard; then
+    cat >> "$handover_dir/for-the-user.txt" <<EOF
+Remote access (WireGuard): not started automatically; IT must enable it first.
+The private connection file is $BASM_ROOT/modules/wireguard/peer1.conf.
+It is a key, not a username/password. Never share it between employees.
+EOF
+  fi
+  cat >> "$handover_dir/for-the-user.txt" <<EOF
+Server, router, domain-provider and internet-provider accounts are not created
+by BASM. Ask IT to record those existing accounts in your password manager.
+IT contact name / phone: ________________________________________________
+
+AUTOMATIC MAINTENANCE
+BASM attempts application updates on January 1 and July 1 at 03:00, according
+to the server's clock. Leave the server on. Services may briefly be unavailable.
+IT should check the update log afterward and handle urgent security fixes sooner.
+Ask IT to disable this schedule if your business requires approved manual updates.
+Version-pinned applications still need IT review for newer releases.
+
+BACKUPS AND RECOVERY (FOR YOUR IT HELPER)
+Daily encrypted backups: $BACKUP_LOCATION/restic
+Backup encryption password: $RESTIC_PASSWORD
+No backup username is required for this local repository.
+Keep an independent secure copy of this password, not only on this server.
+Backups on the same server do not protect against theft or disk failure.
+Ask IT to arrange an off-site copy and demonstrate a successful restore.
+
+Technical database accounts, not browser logins:
+ERPNext database server: erp-db; username: root; password: $DB_ROOT_PASSWORD
+Nextcloud database server: nextcloud-db; username: root; password: $DB_ROOT_PASSWORD
+Nextcloud application database: nextcloud; username: nextcloud; password: $NEXTCLOUD_DB_PASSWORD
+Postal database server: postal-db; username: root; password: $POSTAL_DB_PASSWORD
+Postal application signing secret (not a login): $POSTAL_RAILS_SECRET
+Other application-managed keys remain in the protected application data and
+configuration backups. Do not change database passwords in this document.
+
+IF SOMETHING DOES NOT WORK
+Check your internet connection, then ask your IT contact. Do not reinstall or
+run uninstall.sh to fix a sign-in problem; removing data can destroy records.
+EOF
+
+  cat > "$handover_dir/for-it.txt" <<EOF
+For IT
+======
+Business: $COMPANY_NAME
+Mode: ${DEPLOYMENT_MODE:-production}
+Deployment directory: $BASM_ROOT
+Selected modules: ${BASM_MODULES:-basm}
+Credentials: $handover_dir/for-the-user.txt (private)
+
+1. HAND OVER THE ACCOUNTS
+On the server, open the private user document with:
+  sudo less "$handover_dir/for-the-user.txt"
+Deliver it securely to the owner, not through ordinary email or a shared folder.
+Record your support contact details. Create named employee accounts and enable
+two-factor authentication where available. Record changed passwords separately;
+these documents contain initial values, not live passwords from applications.
+
+2. IDENTIFY THE SERVER AND ROUTER
+Run these commands at the Debian server's terminal:
+  hostname -I
+  ip route show default
+The private server IPv4 usually starts with 192.168., 10., or 172.16.-172.31.
+Do not use a Docker bridge address. The default route's 'via' address is usually
+the router. On a computer on the same network, open that router address in a
+browser. Sign in using the router's existing administrator account.
+In LAN / DHCP / Address Reservation, reserve the server's private address for
+its network card. Save it. Router menu names differ by manufacturer.
+Server private IPv4: __________________ Router address: __________________
+EOF
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    cat >> "$handover_dir/for-it.txt" <<EOF
+
+3. LOCAL TESTING ONLY: DO NOT FORWARD ANY ROUTER PORTS
+Bind address: $BIND_ADDRESS
+Nextcloud: http://$BIND_ADDRESS:$HTTP_PORT
+ERPNext: http://$ERP_URL:$HTTP_PORT
+Postal: http://$MAIL_URL:$HTTP_PORT
+With a localhost binding, use the browser on the server itself.
+For LAN testing, rerun the wizard and select the server's private IPv4 as the
+bind address. On each client, map these names to that address in private DNS
+or its hosts file (Linux: /etc/hosts; Windows: C:\Windows\System32\drivers\etc\hosts):
+  $BIND_ADDRESS $ERP_URL $MAIL_URL $CLOUD_URL
+Use the selected private IPv4 instead of localhost in that entry.
+HTTP is unencrypted: use test data and a trusted network only.
+SMTP is loopback-only on $SMTP_PORT; public mail and HTTPS are not configured.
+EOF
+  else
+    cat >> "$handover_dir/for-it.txt" <<EOF
+
+3. CONNECT THE DOMAIN
+In the router's Internet / WAN status, find the public IPv4. If it is private,
+starts with 100.64.-100.127., or differs from your internet-facing public IP,
+ask the ISP about carrier-grade NAT or an upstream router. Port forwarding
+alone will not work through carrier-grade NAT. Request a public, preferably
+static IPv4 and ask whether inbound AND outbound TCP 25 are allowed.
+At the domain provider, create DNS A records pointing to that public IPv4:
+  $PRIMARY_DOMAIN
+  $ERP_URL
+  $MAIL_URL
+  $CLOUD_URL
+Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
+unless IPv6 routing and firewall rules have also been configured and tested.
+
+4. FORWARD THE ROUTER PORTS
+Open NAT / Port Forwarding / Virtual Server. Add one rule per line below.
+For every rule, destination is the reserved private server IPv4 from step 2.
+Service        Protocol    External port    Internal (server) port
+HTTP           TCP         $HTTP_PORT               $HTTP_PORT
+HTTPS          TCP         $HTTPS_PORT              $HTTPS_PORT
+Postal SMTP    TCP         25               $SMTP_PORT
+If HTTP uses a custom port, ALSO forward external TCP 80 to internal $HTTP_PORT.
+If HTTPS uses a custom port, ALSO forward external TCP 443 to internal $HTTPS_PORT.
+These additional rules allow normal browser access, HTTPS redirects, and
+Let's Encrypt HTTP certificate validation. Do not add a duplicate rule if the
+selected port is already 80 or 443. Public mail requires external TCP 25.
+Save/apply the rules. The URLs in the user document use the selected web ports;
+the standard public ports also work with the additional rules above.
+If the server firewall is enabled, permit these selected internal ports too.
+Do not disable the firewall. Docker-published ports can bypass UFW rules;
+verify reachability and filtering from outside the network.
+Do not forward databases, Redis, Docker, monitoring, or router administration.
+Do not forward SSH ($SSH_PORT) by default. Prefer a configured VPN for support.
+LAMP and Uptime Kuma have no BASM-managed TLS or access control; keep their
+ports private and restrict them on the host as well as at the router.
+
+5. FINISH MAIL SETUP
+Sign in to Postal using the user document. Configure your organization's mail
+domains and sending servers, then publish the MX, SPF, DKIM and DMARC records
+Postal specifies. An A record and port forwarding alone are not enough.
+Ask the ISP to set reverse DNS (PTR) for the public IP to $MAIL_URL.
+Configure application SMTP credentials in Postal; BASM does not generate them.
+Postal is a mail delivery platform, not an IMAP/POP mailbox or webmail service.
+Test sending AND receiving with an unrelated external mail provider. Do not
+promise working mail until DNS, provider restrictions and delivery are checked.
+EOF
+  fi
+  cat >> "$handover_dir/for-it.txt" <<EOF
+
+6. CHECK BEFORE LEAVING
+From the BASM checkout, inspect the services:
+  sudo docker compose --env-file "$BASM_ROOT/config/basm.env" -f "$BASM_ROOT/docker-compose.yml" ps -a
+  sudo docker compose --env-file "$BASM_ROOT/config/basm.env" -f "$BASM_ROOT/docker-compose.yml" logs --tail=100
+One-shot initializer containers should exit successfully (code 0). Investigate
+unhealthy containers, restart loops, and nonzero exits before handing over.
+Open each service URL and actually sign in. In production, test public URLs
+using mobile data with Wi-Fi off. Use https://$ERP_URL, https://$CLOUD_URL and
+https://$MAIL_URL when external 443 maps to the selected server HTTPS port.
+Do not dismiss certificate warnings. DNS or port changes can take time;
+recheck DNS and Traefik logs if certificates are not issued.
+If Uptime Kuma is selected, complete its first-run account setup privately.
+WireGuard only generates files; it is NOT an active VPN. Follow the WireGuard
+documentation to install/enable a server and create a separate peer per person.
+Only after enabling it, forward UDP $WIREGUARD_PORT to the server's same port
+for production use, and test the peer from outside. Never do this in local mode.
+
+7. CHECK BACKUPS AND RECORD SUPPORT DETAILS
+Read docs/backup.md in the BASM checkout for backup and restore commands.
+Confirm a completed snapshot, arrange an encrypted off-site copy, and test a
+restore to a separate location. Preserve the recovery password independently.
+Do not restore over live business data during a test.
+Record router, DNS provider, server administrator and off-site backup accounts
+in the owner's password manager. BASM cannot supply their existing passwords.
+Never attach the environment file or user document to a public support ticket.
+Rerunning installation regenerates these handovers from saved BASM settings;
+it does not discover changed application passwords or manually added accounts.
+8. AUTOMATIC UPDATES
+Installed updater: $BASM_ROOT/maintenance/update.sh
+Schedule: January 1 and July 1 at 03:00, server time (cron; server must be on).
+Cron file: $(update_cron_file "$BASM_ROOT")
+Log: $BASM_ROOT/logs/automatic-updates.log
+The scheduled run requires fresh database dumps and an encrypted Restic snapshot
+before pulling images. It stops on errors and waits for running/healthy services.
+There is no automatic rollback or external failure notification. Review the log
+after each run and verify the owner can sign in. Missed runs are not caught up.
+This only pulls configured image tags; it does not upgrade Debian, BASM source,
+or version pins. Review pinned applications and apply urgent fixes separately.
+To disable automatic runs persistently:
+  sudo touch "$BASM_ROOT/config/disable-auto-updates"
+To re-enable them:
+  sudo rm "$BASM_ROOT/config/disable-auto-updates"
+For quarterly runs, edit the cron month field from 1,7 to 1,4,7,10. Installer
+reruns restore the six-month schedule but keep the disable file if present.
+Manual updates: sudo ./update.sh (from the checkout, after confirming a usable
+backup; manual runs do not create the scheduled pre-update snapshot).
+Troubleshooting: docs/troubleshooting.md in the checkout.
+EOF
+  chmod 600 "$handover_dir/for-the-user.txt" "$handover_dir/for-it.txt" || fail "Cannot protect handover documents."
+)
+
 write_summary() {
   local summary_file="$OUTPUT_DIR/installation-summary.txt"
   local modules_list="${BASM_MODULES:-basm}"
+
+  write_handover || fail "Could not write private handover documents."
+  log "Private handover: $BASM_ROOT/handover/for-the-user.txt and $BASM_ROOT/handover/for-it.txt (deliver securely to the owner)."
 
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     summary_file="$OUTPUT_DIR/local-installation-summary.txt"
@@ -897,7 +1196,8 @@ Initial login details:
 - ERPNext user: Administrator
 - Nextcloud user: $NEXTCLOUD_ADMIN_USER
 - Postal user: $ADMIN_EMAIL
-- Generated passwords and database secrets: $BASM_ROOT/config/basm.env (root-only)
+- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)
+- Setup and network guide: $BASM_ROOT/handover/for-it.txt
 
 For LAN clients, map $ERP_URL, $MAIL_URL and $CLOUD_URL
 to $BIND_ADDRESS in each client's hosts file or private DNS.
@@ -935,7 +1235,8 @@ Initial login details:
 - ERPNext user: Administrator
 - Nextcloud user: $NEXTCLOUD_ADMIN_USER
 - Postal user: $ADMIN_EMAIL
-- Generated passwords and database secrets: $BASM_ROOT/config/basm.env (root-only)
+- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)
+- Setup and network guide: $BASM_ROOT/handover/for-it.txt
 
 Ports:
 $(port_summary)
@@ -951,9 +1252,10 @@ DNS Records Required:
 - MX, SPF, DKIM, and DMARC records for the mail domains shown in Postal
 
 Router Port Forwarding Required:
-- Forward $HTTP_PORT to the BASM server
-- Forward $HTTPS_PORT to the BASM server
-- Forward $SSH_PORT only if administrative access is required externally
+- Forward TCP $HTTP_PORT and $HTTPS_PORT to the same server ports
+- Also forward public TCP 80 -> $HTTP_PORT and TCP 443 -> $HTTPS_PORT if custom
+- Forward public TCP 25 -> $SMTP_PORT for Postal mail delivery
+- Do not expose SSH by default; see the private For IT guide for setup steps
 
 Post-installation Checklist:
 [ ] Point DNS A record to public IP

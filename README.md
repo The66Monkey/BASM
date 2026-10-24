@@ -1,19 +1,6 @@
 # BASM
 
-BASM (Business, Accounting, Storage, Mail) is a reference architecture and opinionated deployment framework for small businesses. It is designed to run on a single Debian server and provide a simple, modular, self-hosted stack for business operations that usually need a basic ERP, mail, file sync, backups, and secure network access.
-
-## What BASM is
-
-BASM is an opinionated deployment framework that composes open-source services, uses upstream Docker images, and keeps the operations simple enough for small teams and consultants.
-
-## Goals
-
-- Use only open-source software
-- Prefer upstream first
-- Keep services modular and understandable
-- Make deployments repeatable on a fresh Debian host
-- Keep operational overhead low for 1-10 users
-- Avoid vendor lock-in
+BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framework for small businesses that runs on a single Debian server and combines established open-source services into a complete business platform running on local infrastructure.
 
 ## Included stack
 
@@ -42,11 +29,50 @@ BASM is an opinionated deployment framework that composes open-source services, 
 3. Complete the setup wizard.
 4. Confirm the selected modules.
 5. Review the generated summary under output/installation-summary.txt.
+6. Securely hand the owner the generated **For the User** document and give
+  their IT helper **For IT**, as described below.
 
 The wizard offers standard ports (HTTP 80 / HTTPS 443 / SMTP 25), a local test
 range, or advanced custom ports after module selection. Selected ports are saved
 and propagated to Compose mappings, module configs, and summary URLs. See
 [port setup](docs/installation.md#port-setup) for the complete port table.
+
+## Owner and IT handover
+
+Every completed install generates two plain-text documents with the actual
+addresses, selected ports, and initial credentials for that deployment:
+
+- **For the User**: service addresses, usernames and initial passwords, backup
+  recovery details, and a separate technical credentials section. It identifies
+  accounts that need manual setup and includes space for the IT contact.
+- **For IT**: a numbered checklist covering router login, reserving the server's
+  network address, DNS, exact TCP/UDP forwarding rules, mail setup, service
+  checks, backups, and secure handover. Local testing has separate instructions
+  that explicitly prohibit router forwarding.
+
+The installer prints their location. On a standard production installation,
+the installer or IT helper can open them on the server with:
+
+```sh
+sudo less /opt/basm/handover/for-the-user.txt
+sudo less /opt/basm/handover/for-it.txt
+```
+
+For local testing, use `/opt/basm-local` instead of `/opt/basm`. A custom
+`BASM_ROOT` uses its own `handover/` directory. The directory has mode `0700`
+and both documents have mode `0600`: only root can read them by default.
+Passwords are never printed in the installation summary or installer log.
+
+The installer must deliver the user document securely, such as in the owner's
+password manager or as a printed copy stored in a locked place. The owner
+should not need to search configuration files or use a terminal. Keep an
+independent secure copy of the backup password away from the server. Do not
+email these documents or commit generated credentials to this repository.
+
+Installation reruns and module upgrades regenerate the documents from saved
+BASM settings. Password changes made inside applications must be recorded in
+the password manager separately; BASM cannot retrieve those changed values.
+Router, Debian, domain-provider, and employee accounts are not created by BASM.
 
 ## Local and LAN testing
 
@@ -64,7 +90,8 @@ Wildcard and public bindings are rejected. Do not forward these ports on a route
 Local mode keeps separate configuration, container names, and data under
 `/opt/basm-local`. It initializes ERPNext, Nextcloud, and Postal's web interface
 with generated credentials, and runs encrypted daily Restic backups. Credentials
-are stored in `/opt/basm-local/config/basm.env` with root-only permissions. Local
+are listed in the private **For the User** handover; BASM also keeps its settings
+in `/opt/basm-local/config/basm.env` with root-only permissions. Local
 Postal SMTP binds only to loopback; it is not an internet mail server. See
 [local installation details](docs/installation.md#local-and-lan-testing)
 for service access, LAN hostname mappings, and mail limitations.
@@ -84,6 +111,42 @@ for service access, LAN hostname mappings, and mail limitations.
 Neither path upgrades system packages or re-downloads cached Docker images. See
 [upgrading](docs/installation.md#upgrading-from-basic-to-full) and
 [promoting](docs/installation.md#promoting-a-local-test-install-to-production).
+
+## Automatic application updates
+
+Completed installs and module upgrades install a protected updater under
+`<BASM_ROOT>/maintenance/` and a deployment-specific job under `/etc/cron.d/`.
+It runs as root at **03:00 on January 1 and July 1**, using the server's clock
+and time zone, without requiring the original checkout or user interaction.
+Cron must be running, and the server must be on at the scheduled time; missed
+runs are not caught up automatically. Updates can briefly interrupt services.
+
+Before changing applications, the scheduled updater dumps all three databases
+and creates an encrypted Restic snapshot. If either fails, it stops without
+updating applications. It prevents overlapping updater runs, pulls configured
+Docker image tags, recreates core and selected module containers, and waits
+for running/healthy services. Failures stop the run and are logged; there is
+no automatic rollback or external failure notification.
+
+Logs are stored in `<BASM_ROOT>/logs/automatic-updates.log`. IT should check
+them after scheduled runs and still maintain tested off-site backups.
+This updates images within their configured tags, not Debian packages, the
+BASM checkout, or version-pinned applications to newer releases. Pinned
+versions still need periodic IT review and any upstream migration steps.
+Six-month updates are not a substitute for urgent security fixes.
+
+For manual-only operation, create the following file on the server (use
+`/opt/basm-local` for local installs). This choice survives installer reruns:
+
+```sh
+sudo touch /opt/basm/config/disable-auto-updates
+```
+
+Remove that file to re-enable automatic runs. For quarterly runs, IT can change
+the month field from `1,7` to `1,4,7,10` in this deployment's cron file; installer
+reruns restore the six-month schedule. Run `sudo ./update.sh` from the checkout
+for an immediate manual update after confirming a usable backup. Manual runs
+use the same overlap lock but do not create the scheduled pre-update snapshot.
 
 ## Security note
 
@@ -115,7 +178,8 @@ but real mail delivery still depends on public DNS and provider network policy.
 
 On first install, generated service credentials and deployment values are stored
 outside the repository at `<BASM_ROOT>/config/basm.env` with mode `0600`; the
-summary lists account names but does not print passwords. Postal's mounted config
+owner receives readable login details in the private **For the User** handover.
+The summary lists account names but does not print passwords. Postal's mounted config
 and signing key are readable by Postal's non-root container account and are not
 world-readable. The wizard also asks for the Nextcloud admin name and backup
 destination, validates hostnames and time zones, and warns when production DNS,

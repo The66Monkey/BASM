@@ -17,6 +17,7 @@ docker() { printf '%s\n' "$*" >> "$DOCKER_LOG"; }
 apt-get() { printf '%s\n' "$*" >> "$APT_LOG"; }
 dpkg-query() { printf 'install ok installed'; }
 chown() { :; }
+systemctl() { :; }
 port_in_use() { return 1; }
 check_debian() { :; }
 export -f docker
@@ -24,6 +25,7 @@ export -f docker
 LOCAL_BASM_ROOT="$TEST_DIR/basm-local"
 PRODUCTION_BASM_ROOT="$TEST_DIR/basm"
 OUTPUT_DIR="$TEST_DIR/output"
+BASM_CRON_DIR="$TEST_DIR/cron.d"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
@@ -32,6 +34,31 @@ run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19
 configure_system
 install_selected_modules
 write_summary
+LOCAL_CRON_FILE="$(update_cron_file "$LOCAL_BASM_ROOT")"
+grep -Fq '0 3 1 1,7 * root /bin/bash' "$LOCAL_CRON_FILE"
+grep -Fq "$LOCAL_BASM_ROOT/maintenance/run-updates.sh" "$LOCAL_CRON_FILE"
+[[ "$(stat -c '%a' "$LOCAL_CRON_FILE")" == 644 ]]
+[[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/maintenance/run-updates.sh")" == 700 ]]
+[[ -s "$LOCAL_BASM_ROOT/maintenance/update.sh" && -s "$LOCAL_BASM_ROOT/maintenance/modules/core.sh" ]]
+touch "$LOCAL_BASM_ROOT/config/disable-auto-updates"
+bash "$LOCAL_BASM_ROOT/maintenance/run-updates.sh"
+[[ ! -e "$LOCAL_BASM_ROOT/logs/automatic-updates.log" ]]
+[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 1 ]]
+USER_HANDOVER="$LOCAL_BASM_ROOT/handover/for-the-user.txt"
+IT_HANDOVER="$LOCAL_BASM_ROOT/handover/for-it.txt"
+[[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/handover")" == 700 ]]
+[[ "$(stat -c '%a' "$USER_HANDOVER")" == 600 ]]
+[[ "$(stat -c '%a' "$IT_HANDOVER")" == 600 ]]
+grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
+grep -Fq "Initial password: $NEXTCLOUD_ADMIN_PASSWORD" "$USER_HANDOVER"
+grep -Fq "Initial password: $POSTAL_ADMIN_PASSWORD" "$USER_HANDOVER"
+grep -Fq "Username: $NEXTCLOUD_ADMIN_USER" "$USER_HANDOVER"
+grep -Fq "Username: $ADMIN_EMAIL" "$USER_HANDOVER"
+grep -Fq "Backup encryption password: $RESTIC_PASSWORD" "$USER_HANDOVER"
+grep -Fq 'http://erp.localhost:19080' "$USER_HANDOVER"
+grep -Fq 'DO NOT FORWARD ANY ROUTER PORTS' "$IT_HANDOVER"
+if grep -Fq "$ERP_ADMIN_PASSWORD" "$OUTPUT_DIR/local-installation-summary.txt"; then exit 1; fi
+if grep -Fq 'Monitoring (Uptime Kuma)' "$USER_HANDOVER"; then exit 1; fi
 [[ ! -s "$APT_LOG" ]] || { cat "$APT_LOG" >&2; exit 1; }
 grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml" "$DOCKER_LOG"
 if grep -Eq '(^| )pull( |$)' "$DOCKER_LOG"; then exit 1; fi
@@ -97,6 +124,13 @@ grep -Fq "$LOCAL_BASM_ROOT/modules/uptime-kuma/docker-compose.yml up -d" "$DOCKE
 if grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml" "$DOCKER_LOG"; then exit 1; fi
 if grep -Eq '(^| )pull( |$)' "$DOCKER_LOG"; then exit 1; fi
 grep -Fq 'Installed Modules: basm lamp wireguard uptime-kuma' "$OUTPUT_DIR/local-installation-summary.txt"
+grep -Fq 'Monitoring (Uptime Kuma)' "$USER_HANDOVER"
+grep -Fq 'http://localhost:19301' "$USER_HANDOVER"
+grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
+[[ -f "$LOCAL_BASM_ROOT/config/disable-auto-updates" ]]
+[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 1 ]]
+grep -Fq 'AUTOMATIC MAINTENANCE' "$USER_HANDOVER"
+grep -Fq '8. AUTOMATIC UPDATES' "$IT_HANDOVER"
 
 # Re-running the upgrade is idempotent.
 upgrade_to_full
@@ -176,6 +210,8 @@ docker() { printf '%s\n' "$*" >> "$DOCKER_LOG"; }
 mkdir -p "$TEST_DIR/prod-backups"
 promote_to_production < <(printf 'bad domain\nacme.example\npromote\n\n\n\n\n%s\n\n\n\n\n\n' "$TEST_DIR/prod-backups")
 [[ ! -e "$LOCAL_BASM_ROOT" && ! -e "$OUTPUT_DIR/local-installation-summary.txt" ]]
+[[ ! -e "$LOCAL_CRON_FILE" ]]
+[[ -f "$(update_cron_file "$PRODUCTION_BASM_ROOT")" ]]
 [[ "$(grep -n "$LOCAL_BASM_ROOT/docker-compose.yml --env-file $LOCAL_BASM_ROOT/config/basm.env down -v" "$DOCKER_LOG" | cut -d: -f1)" -gt \
    "$(grep -n "$PRODUCTION_BASM_ROOT/docker-compose.yml --env-file .* up -d" "$DOCKER_LOG" | tail -1 | cut -d: -f1)" ]]
 grep -Fq "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml down -v --remove-orphans" "$DOCKER_LOG"
@@ -214,6 +250,64 @@ grep -Fq 'NEXTCLOUD_TRUSTED_DOMAINS: "cloud.acme.example"' "$PRODUCTION_BASM_ROO
 grep -Fq 'redirect-to-https' "$PRODUCTION_BASM_ROOT/config/traefik.yml"
 grep -Fq 'port: "443"' "$PRODUCTION_BASM_ROOT/config/traefik.yml"
 grep -Fq 'Endpoint = acme.example:51820' "$PRODUCTION_BASM_ROOT/modules/wireguard/peer1.conf"
+USER_HANDOVER="$PRODUCTION_BASM_ROOT/handover/for-the-user.txt"
+IT_HANDOVER="$PRODUCTION_BASM_ROOT/handover/for-it.txt"
+[[ ! -e "$LOCAL_BASM_ROOT/handover" ]]
+grep -Fq 'https://erp.acme.example:443' "$USER_HANDOVER"
+grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
+grep -Fq 'HTTP           TCP         80               80' "$IT_HANDOVER"
+grep -Fq 'Postal SMTP    TCP         25               25' "$IT_HANDOVER"
+if grep -Fq "$LOCAL_DB_PASSWORD" "$USER_HANDOVER"; then exit 1; fi
+if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summary.txt"; then exit 1; fi
+(
+  HTTP_PORT=19080 HTTPS_PORT=19443 SMTP_PORT=12525
+  chmod 644 "$USER_HANDOVER" "$IT_HANDOVER"
+  write_summary
+  grep -Fq 'https://erp.acme.example:19443' "$USER_HANDOVER"
+  grep -Fq 'HTTP           TCP         19080               19080' "$IT_HANDOVER"
+  grep -Fq 'Postal SMTP    TCP         25               12525' "$IT_HANDOVER"
+  grep -Fq 'ALSO forward external TCP 80 to internal 19080' "$IT_HANDOVER"
+  grep -Fq 'ALSO forward external TCP 443 to internal 19443' "$IT_HANDOVER"
+  [[ "$(stat -c '%a' "$USER_HANDOVER")" == 600 ]]
+  [[ "$(stat -c '%a' "$IT_HANDOVER")" == 600 ]]
+)
+
+(
+  UPDATER_DIR="$TEST_DIR/updater"
+  mkdir -p "$UPDATER_DIR/modules"
+  cp "$ROOT_DIR/update.sh" "$UPDATER_DIR/update.sh"
+  printf 'source %q\nrequire_root() { :; }\n' "$ROOT_DIR/modules/core.sh" > "$UPDATER_DIR/modules/core.sh"
+  docker() {
+    printf '%s\n' "$*" >> "$DOCKER_LOG"
+    if [[ "${DOCKER_TEST_FAIL_BACKUP:-false}" == true && "$*" == *'exec -T restic-backup'* ]]; then return 1; fi
+    if [[ "${DOCKER_TEST_FAIL_DUMP:-false}" == true && "$*" == *'exec -T db-backup'* ]]; then return 1; fi
+  }
+  export -f docker
+  export DOCKER_LOG
+  : > "$DOCKER_LOG"
+  bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/update-output" 2>&1
+  grep -Fq 'exec -T db-backup' "$DOCKER_LOG"
+  grep -Fq 'restic backup --tag basm-pre-update' "$DOCKER_LOG"
+  grep -Fq 'up -d --wait --wait-timeout 900' "$DOCKER_LOG"
+  grep -Fq 'up -d --wait --wait-timeout 300' "$DOCKER_LOG"
+  [[ "$(grep -n 'exec -T restic-backup' "$DOCKER_LOG" | cut -d: -f1)" -lt "$(grep -n 'pull --quiet' "$DOCKER_LOG" | head -n 1 | cut -d: -f1)" ]]
+  : > "$DOCKER_LOG"
+  if DOCKER_TEST_FAIL_BACKUP=true bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/failed-update-output" 2>&1; then exit 1; fi
+  if grep -Eq 'pull --quiet|up -d' "$DOCKER_LOG"; then exit 1; fi
+  : > "$DOCKER_LOG"
+  if DOCKER_TEST_FAIL_DUMP=true bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/failed-dump-output" 2>&1; then exit 1; fi
+  if grep -Eq 'exec -T restic-backup|pull --quiet|up -d' "$DOCKER_LOG"; then exit 1; fi
+  : > "$DOCKER_LOG"
+  bash "$UPDATER_DIR/update.sh" --scheduled "$LOCAL_BASM_ROOT" > "$TEST_DIR/missing-update-output" 2>&1 && exit 1
+  [[ ! -s "$DOCKER_LOG" ]]
+  (
+    exec 9> "$PRODUCTION_BASM_ROOT/logs/update.lock"
+    flock -n 9
+    if bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/locked-update-output" 2>&1; then exit 1; fi
+    grep -Fq 'Another BASM update is already running' "$TEST_DIR/locked-update-output"
+    [[ ! -s "$DOCKER_LOG" ]]
+  )
+)
 
 # Production rejects placeholder contacts that Let's Encrypt would refuse.
 validate_production_email ops@acme.dk
