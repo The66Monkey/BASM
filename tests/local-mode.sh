@@ -162,7 +162,7 @@ grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
   grep -Fq "17 */4 * * * root /bin/bash \"$BASM_ROOT/maintenance/ddns-update.sh\" \"$BASM_ROOT\"" "$(ddns_cron_file "$BASM_ROOT")"
   [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
   grep -Fq 'Authorization: Token abcdefghijklmnopqrstuvwxyz12' "$TEST_DIR/curl-request"
-  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,mail.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
+  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
   IP_MODE=static install_ddns_updater
   [[ ! -e "$(ddns_cron_file "$BASM_ROOT")" && ! -e "$BASM_ROOT/maintenance/ddns-update.sh" ]]
 )

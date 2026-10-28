@@ -969,6 +969,100 @@ port_summary() {
   done
 }
 
+# Strips the primary domain so the result is a deSEC subname (empty for the apex).
+dns_subname() {
+  local name="${1%.}"
+  if [[ "$name" == "$PRIMARY_DOMAIN" ]]; then
+    printf ''
+  else
+    printf '%s' "${name%."$PRIMARY_DOMAIN"}"
+  fi
+}
+
+# Writes copy-paste DNS records for a production install (Postal split-hostname layout).
+write_dns_records() {
+  local file="$1" d="$PRIMARY_DOMAIN"
+  local erp_sub cloud_sub mail_sub
+  erp_sub="$(dns_subname "$ERP_URL")"
+  cloud_sub="$(dns_subname "$CLOUD_URL")"
+  mail_sub="$(dns_subname "$MAIL_URL")"
+  cat > "$file" <<EOF
+DNS records for $d
+====================
+Publish these at your DNS provider (deSEC subnames are relative to $d;
+"@" is the zone apex). Use DNS-only records and no AAAA records.
+PUBLIC_IP is the server's public IPv4 address.
+
+Core hostnames (A)
+  @                 A      PUBLIC_IP
+  ${erp_sub:-@}     A      PUBLIC_IP
+  ${cloud_sub:-@}   A      PUBLIC_IP
+  ${mail_sub:-@}    A      PUBLIC_IP   (Postal web UI and SMTP: $MAIL_URL)
+  mx                A      PUBLIC_IP   (inbound mail host)
+$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
+Postal server-wide records
+  spf               TXT    "v=spf1 a:$MAIL_URL ~all"
+  routes            MX     10 mx.$d.
+  rp                MX     10 mx.$d.
+  rp                TXT    "v=spf1 a mx include:spf.$d ~all"
+  track             CNAME  $MAIL_URL.
+
+Mail domain $d (sending and receiving through Postal)
+  @                 MX     10 mx.$d.
+  @                 TXT    "v=spf1 a mx include:spf.$d ~all"
+  psrp              CNAME  rp.$d.
+  _dmarc            TXT    "v=DMARC1; p=none; rua=mailto:postmaster@$d"
+
+DKIM (only available after the domain is added in Postal)
+  In Postal open the organization, Domains, then the DNS setup for $d.
+  Copy the DKIM record it shows, which looks like:
+  postal-XXXXXX._domainkey   TXT   "v=DKIM1; t=s; h=sha256; p=..."
+  Add the same type of record for the return path domain (rp.$d) if Postal lists it.
+
+If you also keep a separate fixed record elsewhere, note that only ONE SPF TXT
+record may exist per name. Replace any older SPF record instead of adding a second.
+Ask the ISP to set reverse DNS (PTR) of PUBLIC_IP to $MAIL_URL.
+
+One-step setup for deSEC
+------------------------
+Paste the following into a terminal on any computer. It asks for a deSEC API
+token (hidden), detects the public IPv4, and creates or updates the records
+above, except DKIM. The token is not stored.
+
+read -rsp 'deSEC API token: ' TOKEN; echo
+PUBLIC_IP="\$(curl -4 -fsS https://api.ipify.org)"
+BODY="\$(cat <<DNSJSON
+[
+ {"subname":"","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"$erp_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"$cloud_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"$mail_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"mx","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"","type":"MX","ttl":3600,"records":["10 mx.$d."]},
+ {"subname":"routes","type":"MX","ttl":3600,"records":["10 mx.$d."]},
+ {"subname":"rp","type":"MX","ttl":3600,"records":["10 mx.$d."]},
+ {"subname":"","type":"TXT","ttl":3600,"records":["\\"v=spf1 a mx include:spf.$d ~all\\""]},
+ {"subname":"rp","type":"TXT","ttl":3600,"records":["\\"v=spf1 a mx include:spf.$d ~all\\""]},
+ {"subname":"spf","type":"TXT","ttl":3600,"records":["\\"v=spf1 a:$MAIL_URL ~all\\""]},
+ {"subname":"_dmarc","type":"TXT","ttl":3600,"records":["\\"v=DMARC1; p=none; rua=mailto:postmaster@$d\\""]},
+ {"subname":"track","type":"CNAME","ttl":3600,"records":["$MAIL_URL."]},
+ {"subname":"psrp","type":"CNAME","ttl":3600,"records":["rp.$d."]}
+]
+DNSJSON
+)"
+printf 'header = "Authorization: Token %s"\\n' "\$TOKEN" | curl -fsS -K - -X PATCH \\
+  -H 'Content-Type: application/json' -d "\$BODY" \\
+  "https://desec.io/api/v1/domains/$d/rrsets/" -o /dev/null -w 'HTTP %{http_code}\\n'
+unset TOKEN
+
+A result of HTTP 200 means the records were saved. DNS changes can take a few
+minutes to appear. Verify with:
+  dig +short MX $d
+  dig +short TXT $d
+  dig +short A $MAIL_URL
+EOF
+}
+
 write_handover() (
   umask 077
   local handover_dir="$BASM_ROOT/handover"
@@ -1130,11 +1224,15 @@ starts with 100.64.-100.127., or differs from your internet-facing public IP,
 ask the ISP about carrier-grade NAT or an upstream router. Port forwarding
 alone will not work through carrier-grade NAT. Request a public, preferably
 static IPv4 and ask whether inbound AND outbound TCP 25 are allowed.
-At the domain provider, create DNS A records pointing to that public IPv4:
+At the domain provider, create the DNS records in:
+  $handover_dir/dns-records.txt
+It lists the A, MX, SPF, DMARC and Postal records and, for deSEC, a paste-ready
+command that creates them. The A records point to the public IPv4 for:
   $PRIMARY_DOMAIN
   $ERP_URL
   $MAIL_URL
   $CLOUD_URL
+  mx.$PRIMARY_DOMAIN
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
 unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '\n%s' \
   "This install uses a non-static IP: every 4 hours cron updates these deSEC" \
@@ -1164,8 +1262,9 @@ ports private and restrict them on the host as well as at the router.
 
 5. FINISH MAIL SETUP
 Sign in to Postal using the user document. Configure your organization's mail
-domains and sending servers, then publish the MX, SPF, DKIM and DMARC records
-Postal specifies. An A record and port forwarding alone are not enough.
+domains and sending servers, then publish the DKIM record Postal shows for the
+domain; the other MX, SPF and DMARC records are in dns-records.txt (step 3).
+An A record and port forwarding alone are not enough.
 Ask the ISP to set reverse DNS (PTR) for the public IP to $MAIL_URL.
 Configure application SMTP credentials in Postal; BASM does not generate them.
 Postal is a mail delivery platform, not an IMAP/POP mailbox or webmail service.
@@ -1223,6 +1322,11 @@ Manual updates: sudo ./update.sh (from the checkout, after confirming a usable
 backup; manual runs do not create the scheduled pre-update snapshot).
 Troubleshooting: docs/troubleshooting.md in the checkout.
 EOF
+  if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+    [[ ! -L "$handover_dir/dns-records.txt" ]] || fail "Handover document must not be a symbolic link."
+    write_dns_records "$handover_dir/dns-records.txt" || fail "Cannot write DNS records."
+    chmod 600 "$handover_dir/dns-records.txt" || fail "Cannot protect handover documents."
+  fi
   chmod 600 "$handover_dir/for-the-user.txt" "$handover_dir/for-it.txt" || fail "Cannot protect handover documents."
 )
 
