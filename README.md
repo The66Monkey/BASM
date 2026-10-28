@@ -82,4 +82,4 @@ without touching core services or data. See
 - Documentation: CC BY 4.0 — [LICENSE-docs](LICENSE-docs)
 - Attribution guidance: [ATTRIBUTION.md](ATTRIBUTION.md)
 
-BASM is free to use, adapt, and self-host. If BASM helps your organization or project, a mention of the BASM Framework by ScandinavianHacking is appreciated.
+BASM is free to use, adapt, and self-host. If BASM helps your organization or project, a mention of the BASM Framework by [ScandinavianHacking](https://scandinavianhacking.se/) is appreciated.
