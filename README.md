@@ -2,6 +2,10 @@
 
 BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framework for small businesses that runs on a single Debian server and combines established open-source services into a complete business platform running on local infrastructure.
 
+<p align="center">
+  <img src="docs/images/mascot.png" alt="BASM mascot" width="300">
+</p>
+
 ## Included stack
 
 - ERPNext for core business operations
