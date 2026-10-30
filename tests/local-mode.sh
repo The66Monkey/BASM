@@ -107,6 +107,7 @@ for address in 127.0.0.1 192.168.1.50; do
   done
   grep -Fq "\"$address:18081:80\"" "$BASM_ROOT/modules/lamp/docker-compose.yml"
   grep -Fq "\"$address:18301:3001\"" "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml"
+  grep -Fqx '    image: louislam/uptime-kuma:2' "$BASM_ROOT/modules/uptime-kuma/docker-compose.yml"
   write_summary
   grep -Fq "http://$ERP_URL:18080" "$OUTPUT_DIR/local-installation-summary.txt"
 done

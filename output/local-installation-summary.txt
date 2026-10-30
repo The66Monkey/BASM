@@ -1,0 +1,40 @@
+BASM Local Installation Summary
+===============================
+Bind Address: 127.0.0.1
+Data Directory: /opt/basm-local
+Installed Modules: basm lamp wireguard uptime-kuma
+
+Port Profile: local
+Proxy HTTP: 18080/tcp
+Proxy HTTPS: 18443/tcp
+Postal SMTP: 2525/tcp
+Host SSH (unchanged): 22/tcp
+Reusable install settings: /opt/basm-local/config/basm.env (root-only)
+LAMP: http://127.0.0.1:18081
+WireGuard: 18520/udp (server and peer1 configs in /opt/basm-local/modules/wireguard; not started)
+Uptime Kuma: http://127.0.0.1:18301
+Local routes use HTTP only; the HTTPS mapping is reserved, not TLS-enabled.
+
+HTTP URLs (no public DNS or certificates required):
+- Cloud: http://127.0.0.1:18080
+- Cloud: http://cloud.localhost:18080
+- ERP: http://erp.localhost:18080
+- Mail: http://mail.localhost:18080
+
+Initial login details:
+- ERPNext user: Administrator
+- Nextcloud user: basm-admin
+- Postal user: admin@example.com
+- All initial login details: /opt/basm-local/handover/for-the-user.txt (private)
+- Setup and network guide: /opt/basm-local/handover/for-it.txt
+
+For LAN clients, map erp.localhost, mail.localhost and cloud.localhost
+to 127.0.0.1 in each client's hosts file or private DNS.
+Do not forward these ports on your router. HTTP is unencrypted.
+SSH settings and the host firewall are not changed by local mode.
+Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port 2525; public mail delivery requires a production domain and DNS records.
+Restic encrypts daily backups to /opt/basm-local/backups/restic.
+LAMP and Uptime Kuma start automatically when selected; WireGuard generates configuration only.
+Upgrade to the full profile: sudo ./install.sh --full (choose local)
+Promote to production: sudo ./install.sh --promote
+Backup Location: /opt/basm-local/backups

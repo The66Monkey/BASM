@@ -11,7 +11,7 @@ module_install() {
 name: ${BASM_CONTAINER_PREFIX:-basm}-uptime-kuma
 services:
   uptime-kuma:
-    image: louislam/uptime-kuma:latest
+    image: louislam/uptime-kuma:2
     container_name: ${BASM_CONTAINER_PREFIX:-basm}-uptime-kuma
     restart: unless-stopped
     ports:

@@ -1,0 +1,51 @@
+# Logs, including rotated and compressed logs anywhere in the checkout.
+logs/
+*.log
+*.log.*
+*.log-*
+
+# Deployment environments; keep only shipped defaults and examples.
+.env
+.env.*
+*.env
+*.env.*
+!/config/defaults.env
+!/templates/env/example.env
+
+# Local deployment roots and generated runtime files (not source templates).
+/basm/
+/basm-local/
+/docker-compose.yml
+/docker-compose.override.yml
+/compose.override.yaml
+/compose.override.yml
+/data/
+/docker/
+/containerd/
+/maintenance/
+/modules/*/
+/config/prepared-modules/
+/config/postal/
+/config/traefik.yml
+/config/traefik-static.yml
+/config/erpnext-create-site.sh
+/config/postal-admin-created
+/config/disable-auto-updates
+
+# Private handover documents, backups, databases, and keys.
+handover/
+backups/
+db-backups/
+*.sql
+*.sql.gz
+*.sql.bz2
+*.sql.xz
+*.sql.zst
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+acme.json
