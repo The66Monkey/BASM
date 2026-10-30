@@ -56,6 +56,8 @@ grep -Fq "Username: $NEXTCLOUD_ADMIN_USER" "$USER_HANDOVER"
 grep -Fq "Username: $ADMIN_EMAIL" "$USER_HANDOVER"
 grep -Fq "Backup encryption password: $RESTIC_PASSWORD" "$USER_HANDOVER"
 grep -Fq 'http://erp.localhost:19080' "$USER_HANDOVER"
+grep -Fq 'Need professional support? Scandinavian Hacking' "$USER_HANDOVER"
+grep -Fq 'https://scandinavianhacking.se/' "$USER_HANDOVER"
 grep -Fq 'DO NOT FORWARD ANY ROUTER PORTS' "$IT_HANDOVER"
 if grep -Fq "$ERP_ADMIN_PASSWORD" "$OUTPUT_DIR/local-installation-summary.txt"; then exit 1; fi
 if grep -Fq 'Monitoring (Uptime Kuma)' "$USER_HANDOVER"; then exit 1; fi

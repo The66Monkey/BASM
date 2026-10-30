@@ -7,6 +7,16 @@ TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 source "$ROOT_DIR/modules/core.sh"
 
+previous_password=""
+for attempt in {1..10}; do
+  password="$(generate_password)"
+  [[ "$password" =~ ^[A-Za-z0-9]{32}$ ]]
+  [[ "$password" =~ [A-Z] && "$password" =~ [a-z] && "$password" =~ [0-9] ]]
+  [[ "$password" != "$previous_password" ]]
+  previous_password="$password"
+done
+[[ "$(generate_secret)" =~ ^[0-9a-f]{64}$ ]]
+
 (
 set_port_defaults standard
 [[ "$HTTP_PORT" == 80 && "$HTTPS_PORT" == 443 && "$LAMP_PORT" == 8080 ]]
@@ -65,10 +75,19 @@ printf 'COMPANY_NAME="Production sentinel"\n' > "$PRODUCTION_BASM_ROOT/config/ba
 port_in_use() { return 1; }
 
 for address in 127.0.0.1 192.168.1.50; do
+  previous_nextcloud_password="${NEXTCLOUD_ADMIN_PASSWORD:-}"
   if [[ "$address" == 127.0.0.1 ]]; then
     run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\n')
   else
     run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\n' "$address")
+  fi
+  for variable in DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD; do
+    [[ "${!variable}" =~ ^[A-Za-z0-9]{32}$ ]]
+    [[ "${!variable}" =~ [A-Z] && "${!variable}" =~ [a-z] && "${!variable}" =~ [0-9] ]]
+  done
+  [[ "$POSTAL_RAILS_SECRET" =~ ^[0-9a-f]{64}$ ]]
+  if [[ -n "$previous_nextcloud_password" ]]; then
+    [[ "$NEXTCLOUD_ADMIN_PASSWORD" == "$previous_nextcloud_password" ]]
   fi
   render_stack
   render_postal_config

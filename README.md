@@ -14,7 +14,7 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - Nextcloud for file sync and collaboration
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional LAMP, WireGuard, and Uptime Kuma modules (Fluxer and Vaultwarden are placeholders)
+- Optional LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules (Fluxer and Vaultwarden are placeholders)
 
 Everything runs as Docker Compose stacks on a single Debian server.
 
@@ -44,6 +44,9 @@ Outside the repository, under `<BASM_ROOT>/config/` (`/opt/basm` for production,
 Credentials are generated at install time and stored in root-only files. They are
 never printed in the summary or logs; the owner receives them in the private
 **For the User** handover document. See the [security model](docs/security-model.md).
+
+With the optional KeePass module, credentials are stored in an encrypted KDBX
+database instead; the user document contains only its location and master password.
 
 ## How are backups handled?
 

@@ -49,3 +49,6 @@ db-backups/
 *.key
 *.pem
 acme.json
+*.kdbx
+*.kdbx.*
+/config/keepass-master-password*

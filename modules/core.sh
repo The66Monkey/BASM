@@ -150,6 +150,25 @@ generate_secret() {
   openssl rand -hex 32
 }
 
+generate_password() {
+  local password
+  while true; do
+    password="$(openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9')" || return
+    password="${password:0:32}"
+    [[ ${#password} -eq 32 && "$password" =~ [A-Z] && "$password" =~ [a-z] && "$password" =~ [0-9] ]] || continue
+    printf '%s\n' "$password"
+    return 0
+  done
+}
+
+sync_keepass() {
+  printf '%s\0' "${DEPLOYMENT_MODE:-production}" "$HTTP_PORT" "$HTTPS_PORT" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" \
+    "$ERP_ADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_USER" "$NEXTCLOUD_ADMIN_PASSWORD" "$ADMIN_EMAIL" \
+    "$POSTAL_ADMIN_PASSWORD" "$DB_ROOT_PASSWORD" "$NEXTCLOUD_DB_PASSWORD" "$POSTAL_DB_PASSWORD" \
+    "$POSTAL_RAILS_SECRET" "$RESTIC_PASSWORD" "$BACKUP_LOCATION" "${DESEC_TOKEN:-}" "${BASM_MODULES:-basm}" \
+    "$PRIMARY_DOMAIN" "$UPTIME_KUMA_PORT" | /usr/bin/python3 "$ROOT_DIR/templates/keepass-sync.py" "$BASM_ROOT"
+}
+
 validate_domain() {
   [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
 }
@@ -388,7 +407,7 @@ select_deployment() {
 print_module_menu() {
   local index=1 module_name label mark
   printf '\nBASM installation menu\n\n'
-  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma; do
+  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma keepass; do
     case "$module_name" in
       basm) label='BASM Core (required)' ;;
       lamp) label='LAMP' ;;
@@ -396,13 +415,14 @@ print_module_menu() {
       fluxer) label='Fluxer' ;;
       vaultwarden) label='Vaultwarden' ;;
       uptime-kuma) label='Uptime Kuma' ;;
+      keepass) label='KeePassXC credential manager' ;;
     esac
     mark=' '
     if [[ "$module_name" == basm ]] || module_selected "$module_name"; then mark='✓'; fi
     printf '%s) [%s] %s\n' "$index" "$mark" "$label"
     index=$((index + 1))
   done
-  printf '\nSelect modules by number (1-6), separated by spaces, or enter "full" for\n'
+  printf '\nSelect modules by number (1-7), separated by spaces, or enter "full" for\n'
   printf 'Core + LAMP + WireGuard + Uptime Kuma. Leave blank to keep the checked modules.\n'
   printf 'Example: 2 4 6\n'
 }
@@ -417,6 +437,7 @@ select_modules() {
     [4]="fluxer"
     [5]="vaultwarden"
     [6]="uptime-kuma"
+    [7]="keepass"
   )
 
   print_module_menu
@@ -434,7 +455,7 @@ select_modules() {
 
   local choice
   for choice in $input; do
-    if [[ "$choice" =~ ^[1-6]$ ]]; then
+    if [[ "$choice" =~ ^[1-7]$ ]]; then
       if [[ ! " ${selected[*]} " =~ " ${map[$choice]} " ]]; then
         selected+=("${map[$choice]}")
       fi
@@ -568,17 +589,17 @@ run_wizard() {
     warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
   fi
 
-  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_secret)}"
-  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_secret)}"
+  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_password)}"
+  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_password)}"
   NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER:-basm-admin}"
-  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_secret)}"
-  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_secret)}"
-  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_secret)}"
+  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_password)}"
+  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_password)}"
+  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_password)}"
   POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
-  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_secret)}"
+  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_password)}"
   POSTAL_WEB_PROTOCOL=http
   if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
-  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_secret)}"
+  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_password)}"
 
   write_env_file
 
@@ -1079,6 +1100,50 @@ write_handover() (
     [[ ! -L "$handover_dir/$document" ]] || fail "Handover document must not be a symbolic link."
   done
 
+  if module_selected keepass; then
+    local keepass_master_password
+    keepass_master_password="$(sync_keepass)" || fail "Cannot generate the KeePass credential handover."
+    cat > "$handover_dir/for-the-user.txt" <<EOF
+For the User
+============
+Business: $COMPANY_NAME
+Installation: ${DEPLOYMENT_MODE:-production}
+Prepared: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+PRIVATE: This document contains the master password for your credential database.
+
+YOUR KEEPASS ACCESS
+Open this database with KeePassXC (installed on the server), or another
+KeePass-compatible application on your computer:
+Database: $BASM_ROOT/config/credentials.kdbx
+Master password: $keepass_master_password
+No username is required. Ask IT to deliver the database file and this document.
+
+The BASM group contains the service addresses, administrator logins, database
+credentials, backup encryption password, and generated private keys.
+Entries start with the installation values. Record password changes in KeePass;
+installer reruns preserve existing entries rather than resetting your edits.
+Ask IT to record any manually created monitoring, server, router, domain-provider,
+internet-provider, and off-site backup accounts in the database too.
+KeePass is a desktop application, not a web service, and opens no network port.
+
+AUTOMATIC MAINTENANCE
+BASM attempts application updates on January 1 and July 1 at 03:00 (server time).
+Leave the server on. Services may briefly be unavailable. Ask IT to review
+security updates, check backups, arrange an off-site copy, and test a restore.
+Keep an independent copy of the database and master password for recovery;
+the encrypted Restic backup cannot be opened without its password from KeePass.
+
+IF SOMETHING DOES NOT WORK
+Check your internet connection, then ask your IT contact. Do not reinstall or
+run uninstall.sh to fix a sign-in problem; removing data can destroy records.
+IT contact name / phone: ________________________________________________
+
+Need professional support? Scandinavian Hacking can help you troubleshoot
+problems and keep your business systems running. Contact us at:
+https://scandinavianhacking.se/
+EOF
+  else
   cat > "$handover_dir/for-the-user.txt" <<EOF
 For the User
 ============
@@ -1167,7 +1232,12 @@ configuration backups. Do not change database passwords in this document.
 IF SOMETHING DOES NOT WORK
 Check your internet connection, then ask your IT contact. Do not reinstall or
 run uninstall.sh to fix a sign-in problem; removing data can destroy records.
+
+Need professional support? Scandinavian Hacking can help you troubleshoot
+problems and keep your business systems running. Contact us at:
+https://scandinavianhacking.se/
 EOF
+  fi
 
   cat > "$handover_dir/for-it.txt" <<EOF
 For IT
@@ -1185,6 +1255,11 @@ Deliver it securely to the owner, not through ordinary email or a shared folder.
 Record your support contact details. Create named employee accounts and enable
 two-factor authentication where available. Record changed passwords separately;
 these documents contain initial values, not live passwords from applications.
+$(if module_selected keepass; then printf '%s\n' \
+  'KeePass is enabled: all service credentials are in config/credentials.kdbx.' \
+  'The user document contains only KeePass access details. Record account changes' \
+  'and manually created logins in KeePass. Deliver an independent recovery copy' \
+  'of the database and master password before relying on encrypted backups.'; fi)
 
 2. IDENTIFY THE SERVER AND ROUTER
 Run these commands at the Debian server's terminal:
@@ -1330,6 +1405,17 @@ EOF
   chmod 600 "$handover_dir/for-the-user.txt" "$handover_dir/for-it.txt" || fail "Cannot protect handover documents."
 )
 
+credential_summary() {
+  if module_selected keepass; then
+    printf '%s\n' "- Service credentials: $BASM_ROOT/config/credentials.kdbx" \
+      "- KeePass access: $BASM_ROOT/handover/for-the-user.txt (private)"
+  else
+    printf '%s\n' '- ERPNext user: Administrator' "- Nextcloud user: $NEXTCLOUD_ADMIN_USER" \
+      "- Postal user: $ADMIN_EMAIL" "- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)"
+  fi
+  printf '%s\n' "- Setup and network guide: $BASM_ROOT/handover/for-it.txt"
+}
+
 write_summary() {
   local summary_file="$OUTPUT_DIR/installation-summary.txt"
   local modules_list="${BASM_MODULES:-basm}"
@@ -1356,11 +1442,7 @@ HTTP URLs (no public DNS or certificates required):
 - Mail: http://$MAIL_URL:$HTTP_PORT
 
 Initial login details:
-- ERPNext user: Administrator
-- Nextcloud user: $NEXTCLOUD_ADMIN_USER
-- Postal user: $ADMIN_EMAIL
-- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)
-- Setup and network guide: $BASM_ROOT/handover/for-it.txt
+$(credential_summary)
 
 For LAN clients, map $ERP_URL, $MAIL_URL and $CLOUD_URL
 to $BIND_ADDRESS in each client's hosts file or private DNS.
@@ -1395,11 +1477,7 @@ URLs:
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT
 
 Initial login details:
-- ERPNext user: Administrator
-- Nextcloud user: $NEXTCLOUD_ADMIN_USER
-- Postal user: $ADMIN_EMAIL
-- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)
-- Setup and network guide: $BASM_ROOT/handover/for-it.txt
+$(credential_summary)
 
 Ports:
 $(port_summary)

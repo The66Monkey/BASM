@@ -190,6 +190,55 @@ to a temporary directory, which is removed on exit.
   health checks allow up to five minutes before failing the install.
 - Database dumps under `<BASM_ROOT>/data/db-backups` are root-only (`0700`/`0600`).
 
+## Optional KeePass credential manager
+
+Select option `7` in the module menu, alongside any other desired modules, or
+add it to an existing deployment:
+
+```bash
+sudo ./install.sh --module keepass
+```
+
+Enter `local` for the local test deployment. KeePass is an optional extra and is
+not included automatically in the `full` profile.
+
+This installs KeePassXC and the Debian `python3-pykeepass` library. BASM creates
+`<BASM_ROOT>/config/credentials.kdbx`, a standard encrypted KeePass database, and
+stores its generated master password in
+`<BASM_ROOT>/config/keepass-master-password`. Both files have mode `0600`.
+KeePassXC is a desktop application, not a browser interface or network service.
+On a headless server, open a securely delivered database copy with a
+KeePass-compatible application on the owner's computer.
+
+When selected, the **For the User** document contains the database location and
+one master password instead of individual service credentials. The summary and
+**For IT** guide refer to the database without including its master password.
+The database contains BASM-generated administrator and database passwords, the
+Restic password, Postal signing material, any deSEC API token, and generated
+WireGuard files, including prepared configurations.
+
+BASM cannot discover passwords for accounts created manually, such as Uptime
+Kuma, the server, or the router. IT must fill in the provided entries for these
+accounts. Application-managed credentials not known to BASM remain in their
+application data and backups.
+
+Rerunning the installer adds missing entries without overwriting existing
+entries or changing the master password. Update KeePass entries when changing
+passwords in applications. If changing the database master password, also update
+the protected saved master-password file before rerunning the installer.
+Keep an independent recovery copy of the database and master password: a Restic
+backup alone cannot recover the password needed to decrypt itself.
+
+Machine-readable service settings remain in the protected environment file;
+this option removes individual credentials from the human handover documents,
+not from the runtime configuration required by the services.
+
+Run the dedicated integration tests after installing `python3-pykeepass`:
+
+```bash
+bash tests/keepass.sh
+```
+
 ## Upgrading from basic to full
 
 A basic install runs BASM Core only (ERPNext, Nextcloud, Postal, Traefik, and
