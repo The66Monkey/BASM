@@ -10,6 +10,10 @@ This document explains how to install BASM on a fresh Debian server and bring th
 - Domain names for ERP, mail, and cloud subdomains
 - A router that allows port forwarding for HTTP and HTTPS traffic
 
+During Debian's software selection, enable **SSH server** for remote
+administration. Leave **web server** unselected: BASM provides Traefik and
+uses ports 80 and 443 by default, which can conflict with a host web server.
+
 ## Steps
 
 1. Copy the BASM project to the Debian host.
