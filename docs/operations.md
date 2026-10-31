@@ -74,5 +74,5 @@ not create the pre-update snapshot.
   production install, carrying over organization settings and module selection.
 
 Neither path upgrades system packages or re-downloads cached Docker images. See
-[installation.md](installation.md#upgrading-from-basic-to-full) and
-[promoting](installation.md#promoting-a-local-test-install-to-production).
+[installation.md](./installation.md#upgrading-from-basic-to-full) and
+[promoting](./installation.md#promoting-a-local-test-install-to-production).

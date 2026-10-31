@@ -40,7 +40,7 @@ for production and `/opt/basm-local` for local mode.
 
 Only Traefik publishes the shared web ports. Application ports stay on the
 private Compose network. See the port table in
-[installation.md](installation.md#port-setup). Postal SMTP is published on TCP 25
+[installation.md](./installation.md#port-setup). Postal SMTP is published on TCP 25
 in production and `127.0.0.1:2525` in local mode.
 
 ## Repository templates
