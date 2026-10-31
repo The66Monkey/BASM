@@ -24,6 +24,12 @@ A production install needs a **static public IPv4 address** and a DNS domain
 (for example from [deSEC](https://desec.io)). Without a static IP, choose
 `non-static` in the wizard; see [operations](docs/operations.md#dynamic-ip-non-static-installs).
 
+**Minimum system requirements:**
+- Debian 12 or 13
+- 30GB disk space (for Docker images and application data)
+- 2GB RAM minimum (4GB+ recommended)
+- Root access or sudo privileges
+
 1. Clone or copy this project to a fresh Debian server.
 2. Run: `sudo ./install.sh`
 3. Complete the setup wizard and confirm the selected modules.
@@ -33,6 +39,8 @@ A production install needs a **static public IPv4 address** and a DNS domain
 
 To try BASM without DNS or a router, enter `local` as the domain. See
 [local and LAN testing](docs/installation.md#local-and-lan-testing).
+
+To uninstall BASM completely, run: `sudo ./uninstall.sh`
 
 ## Where is configuration stored?
 
@@ -71,6 +79,7 @@ without touching core services or data. See
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Reinstalling & Upgrading](docs/reinstalling.md)
 - [Operations](docs/operations.md)
 - [Architecture](docs/architecture.md)
 - [Service layout](docs/service-layout.md)
