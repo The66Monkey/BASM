@@ -82,10 +82,19 @@ df -h /
 # Should show at least 30GB in the "Avail" column
 ```
 
-If disk space is low, consider:
-- Removing old Docker images: `sudo docker image prune -a`
-- Cleaning apt cache: `sudo apt clean`
-- Moving Docker to a separate disk (see Docker documentation)
+If disk space is insufficient, reconfigure Docker and containerd to use a separate volume:
+
+```bash
+sudo mkdir -p /mnt/basm-data/docker /mnt/basm-data/containerd
+sudo tee /etc/docker/daemon.json > /dev/null <<EOF
+{
+  "data-root": "/mnt/basm-data/docker"
+}
+EOF
+sudo systemctl restart docker
+```
+
+Then set `BASM_ROOT=/mnt/basm-data/basm-local` before running install.sh (see "Moving BASM to a Larger Disk" below).
 
 ### Step 5: Fresh Install
 
@@ -250,7 +259,4 @@ cat /opt/basm-local/output/installation-summary.txt
 - **Root access** via sudo (installation must run with `sudo`)
 - **CPU with virtualization support** (for optimal performance)
 
-On systems with less than 30GB available, consider:
-- Using an external volume for Docker data
-- Installing on a fresh, dedicated server
-- Using cloud infrastructure with sufficient resources
+If the root partition has less than 30GB available, configure Docker and containerd to use a separate volume before installation (see "Moving BASM to a Larger Disk" below).

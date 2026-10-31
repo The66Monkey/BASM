@@ -31,11 +31,6 @@ the selected SMTP port. Also forward the selected HTTP/HTTPS ports to the same
 server ports so the custom-port URLs in the handover work from outside.
 Use the server's reserved private IPv4 address as every rule's destination.
 
-Do not expose SSH by default. Prefer a configured VPN for remote administration.
-WireGuard is not started automatically; only after IT has enabled it should
-its selected UDP port (normally 51820) be forwarded. Keep LAMP and Uptime Kuma
-private, and never forward database or Docker ports.
-
 When Fluxer is selected, also create an A record for `chat.<domain>` and forward
 its configured LiveKit voice TCP and UDP ports (normally 7881/tcp and 7882/udp).
 Fluxer chat itself is served through BASM Traefik on the existing HTTP/HTTPS
@@ -56,8 +51,12 @@ reverse DNS (PTR) arranged with the ISP. Confirm the ISP permits inbound and
 outbound TCP 25 and provides a public IP without carrier-grade NAT. Postal
 does not provide employee mailboxes or webmail.
 
-## Security guidance
+## DNS and server access
 
-- Restrict SSH to a specific admin IP where possible
-- Consider fail2ban or another hardening layer
-- Keep router firmware updated and remove outdated port mappings
+Do not expose SSH by default. Prefer a configured VPN for remote administration.
+WireGuard is not started automatically; only after IT has enabled it should
+its selected UDP port (normally 51820) be forwarded. Keep LAMP and Uptime Kuma
+private, and never forward database or Docker ports.
+
+SSH access is limited to key-based authentication with the standard Debian
+configuration; the installer does not modify SSH settings.

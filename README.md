@@ -34,8 +34,8 @@ A production install needs a **static public IPv4 address** and a DNS domain
 2. Run: `sudo ./install.sh`
 3. Complete the setup wizard and confirm the selected modules.
 4. Review `output/installation-summary.txt`.
-5. Securely hand the owner the **For the User** document and the IT helper
-   **For IT** (see [operations](docs/operations.md#owner-and-it-handover)).
+5. Deliver the **For the User** document (mode 0600) to the owner and **For IT** 
+   to the IT administrator (see [operations](docs/operations.md#owner-and-it-handover)).
 
 To try BASM without DNS or a router, enter `local` as the domain. See
 [local and LAN testing](docs/installation.md#local-and-lan-testing).
