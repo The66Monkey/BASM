@@ -93,11 +93,24 @@ module_compose_files() {
   return 0
 }
 
+module_compose() {
+  local compose_file="$1" module_dir="${1%/docker-compose.yml}"
+  shift
+  if [[ -f "$module_dir/.env" && -f "$module_dir/docker-compose.proxy.yml" && -f "$module_dir/docker-compose.basm.yml" ]]; then
+    basm_compose --env-file "$module_dir/.env" \
+      -f "$compose_file" \
+      -f "$module_dir/docker-compose.proxy.yml" \
+      -f "$module_dir/docker-compose.basm.yml" "$@"
+  else
+    basm_compose -f "$compose_file" "$@"
+  fi
+}
+
 start_module_stack() {
   local compose_file="$BASM_ROOT/modules/$1/docker-compose.yml"
   command -v docker >/dev/null 2>&1 || fail "Docker CLI was not found; module '$1' cannot be started."
   log "Starting $1 module"
-  basm_compose -f "$compose_file" up -d --remove-orphans --quiet-pull || fail "Module '$1' did not start cleanly."
+  module_compose "$compose_file" up -d --remove-orphans --quiet-pull || fail "Module '$1' did not start cleanly."
 }
 
 port_in_use() {
@@ -183,9 +196,11 @@ validate_desec_token() {
 
 ensure_port_defaults() {
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
+  local default_fluxer_tcp=7881 default_fluxer_udp=7882
   local default_smtp=25
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     default_http=18080 default_https=18443 default_lamp=18081 default_kuma=18301 default_wireguard=18520
+    default_fluxer_tcp=17881 default_fluxer_udp=17882
     default_smtp=2525
   fi
   HTTP_PORT="${HTTP_PORT:-$default_http}"
@@ -193,9 +208,12 @@ ensure_port_defaults() {
   LAMP_PORT="${LAMP_PORT:-$default_lamp}"
   UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-$default_kuma}"
   WIREGUARD_PORT="${WIREGUARD_PORT:-$default_wireguard}"
+  FLUXER_LIVEKIT_TCP_PORT="${FLUXER_LIVEKIT_TCP_PORT:-$default_fluxer_tcp}"
+  FLUXER_LIVEKIT_UDP_PORT="${FLUXER_LIVEKIT_UDP_PORT:-$default_fluxer_udp}"
+  FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.${PRIMARY_DOMAIN:-example.com}}"
   SMTP_PORT="${SMTP_PORT:-$default_smtp}"
   SSH_PORT="${SSH_PORT:-22}"
-  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT SSH_PORT SMTP_PORT
+  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT
 }
 
 set_port_defaults() {
@@ -204,6 +222,8 @@ set_port_defaults() {
   LAMP_PORT=8080
   UPTIME_KUMA_PORT=3001
   WIREGUARD_PORT=51820
+  FLUXER_LIVEKIT_TCP_PORT=7881
+  FLUXER_LIVEKIT_UDP_PORT=7882
   SMTP_PORT=25
   if [[ "$1" == local ]]; then
     HTTP_PORT=18080
@@ -211,18 +231,21 @@ set_port_defaults() {
     LAMP_PORT=18081
     UPTIME_KUMA_PORT=18301
     WIREGUARD_PORT=18520
+    FLUXER_LIVEKIT_TCP_PORT=17881
+    FLUXER_LIVEKIT_UDP_PORT=17882
     SMTP_PORT=2525
   fi
 }
 
 validate_port_plan() {
-  local -A assigned=(["${SSH_PORT:-22}"]="host SSH")
+  local -A assigned=(["${SSH_PORT:-22}"]="host SSH") assigned_udp=()
   local variable module_name port
   local -a tcp_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
       lamp) tcp_ports+=(LAMP_PORT) ;;
       uptime-kuma) tcp_ports+=(UPTIME_KUMA_PORT) ;;
+      fluxer) tcp_ports+=(FLUXER_LIVEKIT_TCP_PORT) ;;
     esac
   done
   for variable in "${tcp_ports[@]}"; do
@@ -236,6 +259,15 @@ validate_port_plan() {
     assigned[$port]="$variable"
   done
   validate_port "$WIREGUARD_PORT" || return 1
+  if module_selected wireguard; then assigned_udp["$WIREGUARD_PORT"]="WIREGUARD_PORT"; fi
+  if module_selected fluxer; then
+    port="$FLUXER_LIVEKIT_UDP_PORT"
+    validate_port "$port" || { warn "Invalid port for FLUXER_LIVEKIT_UDP_PORT: $port"; return 1; }
+    if [[ -n "${assigned_udp[$port]:-}" ]]; then
+      warn "FLUXER_LIVEKIT_UDP_PORT conflicts with ${assigned_udp[$port]} on UDP port $port."
+      return 1
+    fi
+  fi
 }
 
 configure_ports() {
@@ -249,6 +281,10 @@ configure_ports() {
       lamp) variable=LAMP_PORT ;;
       uptime-kuma) variable=UPTIME_KUMA_PORT ;;
       wireguard) variable=WIREGUARD_PORT ;;
+      fluxer)
+        custom_ports+=(FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT)
+        continue
+        ;;
       *) continue ;;
     esac
     [[ " ${custom_ports[*]} " == *" $variable "* ]] || custom_ports+=("$variable")
@@ -269,12 +305,12 @@ configure_ports() {
   done
   for variable in "${custom_ports[@]}"; do
     protocol=tcp
-    if [[ "$variable" == WIREGUARD_PORT ]]; then protocol=udp; fi
+    if [[ "$variable" == WIREGUARD_PORT || "$variable" == FLUXER_LIVEKIT_UDP_PORT ]]; then protocol=udp; fi
     if port_in_use "${!variable}" "$protocol"; then
       warn "$variable (${!variable}/$protocol) is already in use on this host. Stop its current owner or rerun with custom ports."
     fi
   done
-  export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
+  export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT
 }
 
 validate_local_bind_address() {
@@ -319,7 +355,7 @@ render_stack() {
   export BASM_CONTAINER_PREFIX="${BASM_CONTAINER_PREFIX:-basm}"
   ensure_port_defaults
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
-  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
+  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${FLUXER_DOMAIN} ${BIND_ADDRESS} ${HTTPS_PORT}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
   envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$BASM_ROOT/config/traefik-static.yml"
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     cat >> "$BASM_ROOT/config/traefik-static.yml" <<EOF
@@ -398,7 +434,7 @@ select_deployment() {
   fi
   if [[ "$LOCAL_MODE" == false ]]; then
     if [[ "${PRIMARY_DOMAIN:-}" != "$domain" ]]; then
-      unset ERP_URL MAIL_URL CLOUD_URL
+      unset ERP_URL MAIL_URL CLOUD_URL FLUXER_DOMAIN
     fi
     PRIMARY_DOMAIN="$domain"
   fi
@@ -413,7 +449,7 @@ print_module_menu() {
       lamp) label='LAMP' ;;
       wireguard) label='WireGuard' ;;
       fluxer) label='Fluxer' ;;
-      vaultwarden) label='Vaultwarden' ;;
+      vaultwarden) label='Vaultwarden (deprecated; unavailable for new installs)' ;;
       uptime-kuma) label='Uptime Kuma' ;;
       keepass) label='KeePassXC credential manager' ;;
     esac
@@ -456,7 +492,9 @@ select_modules() {
   local choice
   for choice in $input; do
     if [[ "$choice" =~ ^[1-7]$ ]]; then
-      if [[ ! " ${selected[*]} " =~ " ${map[$choice]} " ]]; then
+      if [[ "$choice" == 5 ]]; then
+        warn "Vaultwarden is deprecated and unavailable for new installs; select KeePassXC instead."
+      elif [[ ! " ${selected[*]} " =~ " ${map[$choice]} " ]]; then
         selected+=("${map[$choice]}")
       fi
     else
@@ -494,6 +532,9 @@ SSH_PORT=$SSH_PORT
 LAMP_PORT=$LAMP_PORT
 UPTIME_KUMA_PORT=$UPTIME_KUMA_PORT
 WIREGUARD_PORT=$WIREGUARD_PORT
+FLUXER_DOMAIN="$FLUXER_DOMAIN"
+FLUXER_LIVEKIT_TCP_PORT=$FLUXER_LIVEKIT_TCP_PORT
+FLUXER_LIVEKIT_UDP_PORT=$FLUXER_LIVEKIT_UDP_PORT
 ERP_URL="$ERP_URL"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
@@ -537,6 +578,7 @@ run_wizard() {
     SMTP_BIND_ADDRESS=0.0.0.0
     SMTP_PORT=25
   fi
+  FLUXER_DOMAIN="chat.$PRIMARY_DOMAIN"
 
   COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" 'validate_company_name "$1"')"
   local email_validator='validate_email "$1"' default_email="${ADMIN_EMAIL:-admin@example.com}"
@@ -699,6 +741,9 @@ install_auto_updates() (
   install -d -m 700 "$maintenance_dir" "$maintenance_dir/modules" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
   install -m 700 "$ROOT_DIR/update.sh" "$maintenance_dir/update.sh" || fail "Cannot install updater."
   install -m 600 "$ROOT_DIR/modules/core.sh" "$maintenance_dir/modules/core.sh" || fail "Cannot install updater helpers."
+  if module_selected fluxer; then
+    install -m 600 "$ROOT_DIR/modules/fluxer.sh" "$maintenance_dir/modules/fluxer.sh" || fail "Cannot install Fluxer updater helper."
+  fi
   cat > "$maintenance_dir/run-updates.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -769,7 +814,7 @@ run_module_install() {
     ensure_dir "$BASM_ROOT/modules"
     mv "$prepared_dir" "$module_dir" || fail "Could not activate prepared configuration for '$module_name'."
   fi
-  unset -f module_install module_start
+  unset -f module_install module_start module_update
   source "$script_path"
   if declare -F module_install >/dev/null; then
     module_install || return
@@ -778,6 +823,18 @@ run_module_install() {
     fi
   else
     fail "Module '$module_name' does not expose a module_install function."
+  fi
+}
+
+run_module_update() {
+  local module_name="$1" script_path
+  [[ "$module_name" == fluxer ]] || return 0
+  script_path="${MODULES_DIR:-$ROOT_DIR/modules}/${module_name}.sh"
+  [[ -f "$script_path" ]] || fail "Unknown module: $module_name"
+  unset -f module_install module_start module_update
+  source "$script_path"
+  if declare -F module_update >/dev/null; then
+    module_update "$BASM_ROOT/modules/$module_name"
   fi
 }
 
@@ -806,6 +863,7 @@ module_port_variable() {
     lamp) printf 'LAMP_PORT' ;;
     uptime-kuma) printf 'UPTIME_KUMA_PORT' ;;
     wireguard) printf 'WIREGUARD_PORT' ;;
+    fluxer) printf 'FLUXER_LIVEKIT_TCP_PORT' ;;
   esac
 }
 
@@ -816,6 +874,9 @@ upgrade_modules() {
   local -a added=()
   [[ -f "$BASM_ROOT/docker-compose.yml" ]] || fail "No core BASM stack was found at $BASM_ROOT. Run the full installer first."
   for module_name in "$@"; do
+    if [[ "$module_name" == vaultwarden ]] && ! module_selected vaultwarden; then
+      fail "Vaultwarden is deprecated for new installs. Select KeePassXC instead."
+    fi
     [[ -f "$MODULES_DIR/$module_name.sh" ]] || fail "Unknown module: $module_name"
     module_selected "$module_name" || added+=("$module_name")
   done
@@ -825,8 +886,13 @@ upgrade_modules() {
     warn "The current port plan conflicts with the requested modules. Choose new module ports."
     for module_name in "${added[@]}"; do
       variable="$(module_port_variable "$module_name")"
-      [[ -n "$variable" ]] || continue
-      printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
+      if [[ -n "$variable" ]]; then
+        printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
+      fi
+      if [[ "$module_name" == fluxer ]]; then
+        variable=FLUXER_LIVEKIT_UDP_PORT
+        printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
+      fi
     done
     PORT_PROFILE=custom
   done
@@ -838,8 +904,11 @@ upgrade_modules() {
     if port_in_use "${!variable}" "$protocol"; then
       warn "$variable (${!variable}/$protocol) is already in use on this host."
     fi
+    if [[ "$module_name" == fluxer ]] && port_in_use "$FLUXER_LIVEKIT_UDP_PORT" udp; then
+      warn "FLUXER_LIVEKIT_UDP_PORT ($FLUXER_LIVEKIT_UDP_PORT/udp) is already in use on this host."
+    fi
   done
-  export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
+  export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT
 
   write_env_file
   for module_name in "$@"; do
@@ -863,7 +932,7 @@ stop_deployment() {
   local root="$1" compose_file
   command -v docker >/dev/null 2>&1 || return 0
   while IFS= read -r compose_file; do
-    basm_compose -f "$compose_file" down --remove-orphans || warn "Could not stop $compose_file"
+    module_compose "$compose_file" down --remove-orphans || warn "Could not stop $compose_file"
   done < <(module_compose_files "$root")
   if [[ -f "$root/docker-compose.yml" ]]; then
     log "Stopping BASM Docker stack at $root"
@@ -878,7 +947,7 @@ start_deployment() {
     basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" up -d --remove-orphans || warn "Could not restart the core stack at $root"
   fi
   while IFS= read -r compose_file; do
-    basm_compose -f "$compose_file" up -d --remove-orphans || warn "Could not restart $compose_file"
+    module_compose "$compose_file" up -d --remove-orphans || warn "Could not restart $compose_file"
   done < <(module_compose_files "$root")
 }
 
@@ -892,7 +961,7 @@ purge_deployment() {
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
       log "Stopping module stack $compose_file"
-      basm_compose -f "$compose_file" down -v --remove-orphans || warn "Could not stop $compose_file"
+      module_compose "$compose_file" down -v --remove-orphans || warn "Could not stop $compose_file"
     done < <(module_compose_files "$root")
     if [[ -f "$root/docker-compose.yml" ]]; then
       log "Stopping BASM Docker stack at $root"
@@ -933,7 +1002,7 @@ promote_to_production() {
   [[ "$answer" == promote ]] || { log "Promotion cancelled."; return 1; }
 
   for variable in DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE HTTP_PORT HTTPS_PORT \
-    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
+    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_DOMAIN FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
     BACKUP_LOCATION PRIMARY_DOMAIN DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD \
     NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET \
     POSTAL_WEB_PROTOCOL RESTIC_PASSWORD; do
@@ -977,6 +1046,14 @@ port_summary() {
       lamp) printf 'LAMP: http://%s:%s\n' "$host" "$LAMP_PORT" ;;
       uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
+      fluxer)
+        if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+          printf 'Fluxer: http://%s:%s\n' "$FLUXER_DOMAIN" "$HTTP_PORT"
+        else
+          printf 'Fluxer: https://%s:%s\n' "$FLUXER_DOMAIN" "$HTTPS_PORT"
+        fi
+        printf 'Fluxer voice: %s/tcp and %s/udp\n' "$FLUXER_LIVEKIT_TCP_PORT" "$FLUXER_LIVEKIT_UDP_PORT"
+        ;;
     esac
   done
   for module_name in $BASM_FULL_MODULES; do
@@ -1003,10 +1080,11 @@ dns_subname() {
 # Writes copy-paste DNS records for a production install (Postal split-hostname layout).
 write_dns_records() {
   local file="$1" d="$PRIMARY_DOMAIN"
-  local erp_sub cloud_sub mail_sub
+  local erp_sub cloud_sub mail_sub fluxer_sub
   erp_sub="$(dns_subname "$ERP_URL")"
   cloud_sub="$(dns_subname "$CLOUD_URL")"
   mail_sub="$(dns_subname "$MAIL_URL")"
+  fluxer_sub="$(dns_subname "$FLUXER_DOMAIN")"
   cat > "$file" <<EOF
 DNS records for $d
 ====================
@@ -1019,6 +1097,7 @@ Core hostnames (A)
   ${erp_sub:-@}     A      PUBLIC_IP
   ${cloud_sub:-@}   A      PUBLIC_IP
   ${mail_sub:-@}    A      PUBLIC_IP   (Postal web UI and SMTP: $MAIL_URL)
+$(if module_selected fluxer; then printf '  %s      A      PUBLIC_IP   (Fluxer: %s)\n' "$fluxer_sub" "$FLUXER_DOMAIN"; fi)
   mx                A      PUBLIC_IP   (inbound mail host)
 $(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
 Postal server-wide records
@@ -1058,6 +1137,7 @@ BODY="\$(cat <<DNSJSON
  {"subname":"$erp_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
  {"subname":"$cloud_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
  {"subname":"$mail_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+$(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":3600,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub"; fi)
  {"subname":"mx","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
  {"subname":"","type":"MX","ttl":3600,"records":["10 mx.$d."]},
  {"subname":"routes","type":"MX","ttl":3600,"records":["10 mx.$d."]},
@@ -1239,6 +1319,19 @@ https://scandinavianhacking.se/
 EOF
   fi
 
+  if module_selected fluxer; then
+    local fluxer_setup_token
+    fluxer_setup_token="$(sed -n 's/^FLUXER_SETUP_TOKEN=//p' "$BASM_ROOT/modules/fluxer/.env" | head -n 1)"
+    cat >> "$handover_dir/for-the-user.txt" <<EOF
+
+Fluxer (self-hosted chat)
+Address: $scheme://$FLUXER_DOMAIN:$web_port
+One-time setup token: $fluxer_setup_token
+Use this token to create the first Fluxer administrator account. It is not a
+login password and is only needed during initial setup.
+EOF
+  fi
+
   cat > "$handover_dir/for-it.txt" <<EOF
 For IT
 ======
@@ -1257,7 +1350,8 @@ two-factor authentication where available. Record changed passwords separately;
 these documents contain initial values, not live passwords from applications.
 $(if module_selected keepass; then printf '%s\n' \
   'KeePass is enabled: all service credentials are in config/credentials.kdbx.' \
-  'The user document contains only KeePass access details. Record account changes' \
+  'The user document contains KeePass access and any one-time Fluxer setup token.' \
+  'Record account changes' \
   'and manually created logins in KeePass. Deliver an independent recovery copy' \
   'of the database and master password before relying on encrypted backups.'; fi)
 
@@ -1285,11 +1379,18 @@ With a localhost binding, use the browser on the server itself.
 For LAN testing, rerun the wizard and select the server's private IPv4 as the
 bind address. On each client, map these names to that address in private DNS
 or its hosts file (Linux: /etc/hosts; Windows: C:\Windows\System32\drivers\etc\hosts):
-  $BIND_ADDRESS $ERP_URL $MAIL_URL $CLOUD_URL
+  $BIND_ADDRESS $ERP_URL $MAIL_URL $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
 Use the selected private IPv4 instead of localhost in that entry.
 HTTP is unencrypted: use test data and a trusted network only.
 SMTP is loopback-only on $SMTP_PORT; public mail and HTTPS are not configured.
 EOF
+    if module_selected fluxer; then
+      cat >> "$handover_dir/for-it.txt" <<EOF
+Fluxer: http://$FLUXER_DOMAIN:$HTTP_PORT
+Voice ports bind to $BIND_ADDRESS on TCP $FLUXER_LIVEKIT_TCP_PORT and UDP $FLUXER_LIVEKIT_UDP_PORT.
+Do not forward these ports on a router in local mode.
+EOF
+    fi
   else
     cat >> "$handover_dir/for-it.txt" <<EOF
 
@@ -1308,6 +1409,7 @@ command that creates them. The A records point to the public IPv4 for:
   $MAIL_URL
   $CLOUD_URL
   mx.$PRIMARY_DOMAIN
+$(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
 unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '\n%s' \
   "This install uses a non-static IP: every 4 hours cron updates these deSEC" \
@@ -1334,6 +1436,7 @@ Do not forward databases, Redis, Docker, monitoring, or router administration.
 Do not forward SSH ($SSH_PORT) by default. Prefer a configured VPN for support.
 LAMP and Uptime Kuma have no BASM-managed TLS or access control; keep their
 ports private and restrict them on the host as well as at the router.
+$(if module_selected fluxer; then printf 'Fluxer voice requires TCP %s and UDP %s forwarded to the server for calls.\n' "$FLUXER_LIVEKIT_TCP_PORT" "$FLUXER_LIVEKIT_UDP_PORT"; fi)
 
 5. FINISH MAIL SETUP
 Sign in to Postal using the user document. Configure your organization's mail

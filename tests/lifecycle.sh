@@ -287,7 +287,10 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   export -f docker
   export DOCKER_LOG
   : > "$DOCKER_LOG"
-  bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/update-output" 2>&1
+  if ! bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/update-output" 2>&1; then
+    cat "$TEST_DIR/update-output" >&2
+    exit 1
+  fi
   grep -Fq 'exec -T db-backup' "$DOCKER_LOG"
   grep -Fq 'restic backup --tag basm-pre-update' "$DOCKER_LOG"
   grep -Fq 'up -d --wait --wait-timeout 900' "$DOCKER_LOG"

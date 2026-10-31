@@ -36,6 +36,11 @@ WireGuard is not started automatically; only after IT has enabled it should
 its selected UDP port (normally 51820) be forwarded. Keep LAMP and Uptime Kuma
 private, and never forward database or Docker ports.
 
+When Fluxer is selected, also create an A record for `chat.<domain>` and forward
+its configured LiveKit voice TCP and UDP ports (normally 7881/tcp and 7882/udp).
+Fluxer chat itself is served through BASM Traefik on the existing HTTP/HTTPS
+ports; do not expose Fluxer’s internal services or its edge proxy directly.
+
 ## DNS requirements
 
 Create A records for:
@@ -44,6 +49,7 @@ Create A records for:
 - erp.example.com -> public IP
 - mail.example.com -> public IP
 - cloud.example.com -> public IP
+- chat.example.com -> public IP (when Fluxer is selected)
 
 Mail also needs the MX, SPF, DKIM, and DMARC records specified by Postal and
 reverse DNS (PTR) arranged with the ISP. Confirm the ISP permits inbound and

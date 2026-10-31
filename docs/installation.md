@@ -52,15 +52,18 @@ chosen bind address, domain, or HTTP/TLS mode.
 | LAMP HTTP (TCP) | 8080 | 18081 |
 | Uptime Kuma HTTP (TCP) | 3001 | 18301 |
 | WireGuard ListenPort (UDP) | 51820 | 18520 |
+| Fluxer voice (TCP) | 7881 | 17881 |
+| Fluxer voice (UDP) | 7882 | 17882 |
 
-`custom` prompts for HTTP, HTTPS, SMTP, and all full-profile modules' ports,
-even on a basic install, so future services have a reusable port plan. Values must
+`custom` prompts for HTTP, HTTPS, SMTP, all full-profile modules' ports, and
+selected Fluxer voice ports, so services have a reusable port plan. Values must
 be between 1 and 65535. Duplicate TCP mappings, including collisions with the
 recorded host SSH port and future full-profile services, are rejected by the
 wizard. Existing host listeners produce warnings;
 stop the current owner or choose custom ports before starting a conflicting
 service. SSH is not changed by any profile. WireGuard's port is written to its
-generated configuration; the module does not start a VPN server.
+generated configuration; the module does not start a VPN server. Fluxer's voice
+ports are published only on the selected bind address.
 
 Values are saved to the environment configuration and used when generating
 Compose mappings, module configuration, and summary URLs. Adding a module later
@@ -71,8 +74,9 @@ Only Traefik publishes the shared web entry points. Postal, ERPNext, and
 Nextcloud are reached by hostname over the private Compose network, so their
 internal listening ports do not compete for host port 80. Do not start separate
 upstream web proxies publishing the same host port alongside BASM's Traefik.
-Fluxer remains a placeholder in this repository; there is no Fluxer server or
-port mapping to configure yet.
+Fluxer uses its official self-hosted Compose bundle, runs behind BASM Traefik at
+`chat.<domain>`, and stores generated settings under `<BASM_ROOT>/modules/fluxer/`.
+Its bundled LiveKit voice service needs the selected TCP and UDP ports below.
 
 Traefik's static listeners remain on container ports 80/443; only host mappings
 change. In production, HTTP requests are permanently redirected to HTTPS. Production HTTPS URLs include the selected port. Let's Encrypt TLS
@@ -123,7 +127,7 @@ are rejected. LAN mode uses `erp.basm.test`, `mail.basm.test`, and
 Add this entry to each client's hosts file, or configure equivalent private DNS:
 
 ```text
-192.168.1.50 erp.basm.test mail.basm.test cloud.basm.test
+192.168.1.50 erp.basm.test mail.basm.test cloud.basm.test chat.basm.test (when Fluxer is selected)
 ```
 
 Open http://192.168.1.50:18080 for Cloud, http://erp.basm.test:18080 for ERP,
@@ -145,12 +149,15 @@ Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps. A local repository is not
 an off-host backup; configure an external copy and test restores.
 
-Optional modules: LAMP and Uptime Kuma are started automatically when selected
+Optional modules: Fluxer, LAMP, and Uptime Kuma are started automatically when selected
 (each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
 LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
 WireGuard generates a server config and a `peer1.conf` client config with fresh
-keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer and
-Vaultwarden are placeholders.
+keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer
+generates its setup token and persistent service secrets once, serves through
+Traefik, and stores PostgreSQL dumps and data in the Restic backup set. The
+first Fluxer administrator uses the one-time token in the private user handover.
+Vaultwarden is deprecated and cannot be selected for new installs; use KeePassXC.
 LAMP uses port 18081 in local mode and Uptime Kuma uses 18301 with the local port
 profile, both bound to the selected local address. `uninstall.sh` stops them and
 `update.sh` updates them together with the core stack. The wizard rejects
@@ -160,6 +167,7 @@ conflicting port assignments among the selected services.
 
 ```bash
 sudo ./install.sh --module lamp
+sudo ./install.sh --module fluxer
 sudo ./install.sh --full
 sudo ./update.sh
 sudo ./uninstall.sh
@@ -242,7 +250,8 @@ bash tests/keepass.sh
 ## Upgrading from basic to full
 
 A basic install runs BASM Core only (ERPNext, Nextcloud, Postal, Traefik, and
-Restic backups). The full profile adds LAMP, WireGuard, and Uptime Kuma:
+Restic backups). The full profile adds LAMP, WireGuard, and Uptime Kuma. Fluxer
+is installed separately because it is a larger optional service:
 
 ```bash
 sudo ./install.sh --full
@@ -279,7 +288,8 @@ The upgrade:
   Uptime Kuma, and refreshes the summary.
 
 It is safe to rerun. `sudo ./install.sh --module <name>` adds a single module in
-the same way. In the full wizard, enter `full` at the module menu; a blank
+the same way. To add Fluxer, use `sudo ./install.sh --module fluxer` or select it
+in the wizard. In the full wizard, enter `full` at the module menu; a blank
 answer keeps the modules that are already installed.
 
 ## Promoting a local test install to production

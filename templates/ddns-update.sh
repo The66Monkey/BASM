@@ -21,7 +21,11 @@ fi
 last_ip="$(cat "$STATE_FILE" 2>/dev/null || true)"
 [[ "$current_ip" != "$last_ip" ]] || exit 0
 
-hostnames="$(printf '%s\n' "$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "mx.$PRIMARY_DOMAIN" | sort -u | paste -sd, -)"
+hostnames=("$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "mx.$PRIMARY_DOMAIN")
+if [[ " ${BASM_MODULES:-basm} " == *" fluxer "* && -n "${FLUXER_DOMAIN:-}" ]]; then
+  hostnames+=("$FLUXER_DOMAIN")
+fi
+hostnames="$(printf '%s\n' "${hostnames[@]}" | sort -u | paste -sd, -)"
 note "Public IP changed from ${last_ip:-unknown} to $current_ip; updating $hostnames"
 # The token is passed on stdin so it never appears in the process list.
 if ! printf 'header = "Authorization: Token %s"\n' "$DESEC_TOKEN" |

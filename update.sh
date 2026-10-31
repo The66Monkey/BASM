@@ -58,8 +58,13 @@ if [[ "$SCHEDULED" == true ]]; then
     MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h nextcloud-db -uroot --all-databases > /dumps/pre-update-nextcloud.sql
     MYSQL_PWD="$POSTAL_DB_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h postal-db -uroot --all-databases > /dumps/pre-update-postal.sql
   ' || fail "Pre-update database backup failed; no applications were updated."
+  if [[ -f "$BASM_ROOT/modules/fluxer/docker-compose.basm.yml" ]]; then
+    module_compose "$BASM_ROOT/modules/fluxer/docker-compose.yml" exec -T fluxer-db-backup sh -ec \
+      'umask 077; pg_dumpall -h postgres -U "${FLUXER_POSTGRES_USERNAME:-fluxer}" > /backups/fluxer-pre-update.sql' \
+      || fail "Fluxer pre-update database backup failed; no applications were updated."
+  fi
   log "Creating encrypted pre-update snapshot"
-  basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" exec -T restic-backup restic backup --tag basm-pre-update /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config || fail "Pre-update snapshot failed; no applications were updated."
+  basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" exec -T restic-backup restic backup --tag basm-pre-update /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config /source/fluxer /source/fluxer-config /source/fluxer-db-backups || fail "Pre-update snapshot failed; no applications were updated."
 fi
 
 log "Pulling latest Docker images"
@@ -70,8 +75,12 @@ basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/ba
 
 while IFS= read -r compose_file; do
   log "Updating module stack $compose_file"
-  basm_compose -f "$compose_file" pull --quiet || fail "Failed to pull images for $compose_file"
-  basm_compose -f "$compose_file" up -d --wait --wait-timeout 300 --remove-orphans || fail "Failed to recreate $compose_file or pass health checks"
+  module_name="$(basename "$(dirname "$compose_file")")"
+  module_wait_timeout=300
+  if [[ "$module_name" == fluxer ]]; then module_wait_timeout=900; fi
+  run_module_update "$module_name" || fail "Failed to refresh $module_name module configuration"
+  module_compose "$compose_file" pull --quiet || fail "Failed to pull images for $compose_file"
+  module_compose "$compose_file" up -d --wait --wait-timeout "$module_wait_timeout" --remove-orphans || fail "Failed to recreate $compose_file or pass health checks"
 done < <(module_compose_files "$BASM_ROOT")
 
 log "Validating BASM stack health"

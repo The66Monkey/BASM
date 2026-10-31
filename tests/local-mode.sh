@@ -39,6 +39,26 @@ BASM_MODULES=basm
 configure_ports < <(printf 'custom\n9000\n9443\n2526\n9000\n51822\n9301\ncustom\n9000\n9443\n2526\n9001\n51822\n9301\n')
 [[ "$BASM_MODULES" == basm ]]
 [[ "$LAMP_PORT" == 9001 && "$WIREGUARD_PORT" == 51822 && "$UPTIME_KUMA_PORT" == 9301 ]]
+
+set_port_defaults standard
+BASM_MODULES='basm fluxer wireguard'
+FLUXER_LIVEKIT_UDP_PORT=51820
+if validate_port_plan; then exit 1; fi
+FLUXER_LIVEKIT_UDP_PORT=7882
+FLUXER_LIVEKIT_TCP_PORT=80
+if validate_port_plan; then exit 1; fi
+
+BASM_MODULES=basm
+select_modules < <(printf '5\n') >/dev/null 2>"$TEST_DIR/vaultwarden-warning"
+[[ "$BASM_MODULES" == basm ]]
+grep -Fq 'Vaultwarden is deprecated' "$TEST_DIR/vaultwarden-warning"
+(
+  BASM_ROOT="$TEST_DIR/vaultwarden-legacy"
+  source "$ROOT_DIR/modules/vaultwarden.sh"
+  module_install 2>"$TEST_DIR/vaultwarden-module-warning"
+  [[ ! -e "$BASM_ROOT/modules/vaultwarden" ]]
+  grep -Fq 'Vaultwarden is deprecated' "$TEST_DIR/vaultwarden-module-warning"
+)
 )
 
 for address in 127.0.0.1 10.0.0.5 192.168.1.5 172.16.0.1 172.31.255.254; do
@@ -205,4 +225,140 @@ grep -Fq '"0.0.0.0:19443:443"' "$BASM_ROOT/docker-compose.yml"
   BASM_MODULES=basm
   if (run_module_install lamp); then exit 1; fi
 )
+
+FLUXER_ROOT="$TEST_DIR/fluxer"
+FLUXER_BUNDLE_DIR="$TEST_DIR/fluxer-bundle"
+mkdir -p "$FLUXER_BUNDLE_DIR" "$FLUXER_ROOT/config"
+cat > "$FLUXER_BUNDLE_DIR/.env.example" <<'EOF'
+FLUXER_SETTINGS_LOADED=true
+FLUXER_DOMAIN=
+FLUXER_SETUP_TOKEN=
+POSTGRES_PASSWORD=
+MEILI_MASTER_KEY=
+FLUXER_S3_SECRET_KEY=
+LIVEKIT_API_SECRET=
+FLUXER_SUDO_MODE_SECRET=
+FLUXER_CONNECTION_INITIATION_SECRET=
+FLUXER_PROFILE_PSEUDONYM_SECRET=
+FLUXER_GATEWAY_RPC_AUTH_TOKEN=
+FLUXER_ERLANG_COOKIE=
+FLUXER_MEDIA_PROXY_SECRET_KEY=
+FLUXER_ADMIN_SECRET_KEY_BASE=
+FLUXER_ADMIN_OAUTH_CLIENT_SECRET=
+FLUXER_MEDIA_PROXY_UPLOAD_RELAY_SECRET_BASE64=
+FLUXER_ACTIVITYPUB_SIGNING_KEY_BASE64=
+FLUXER_VAPID_PUBLIC_KEY=
+FLUXER_VAPID_PRIVATE_KEY=
+FLUXER_LIVEKIT_TCP_PORT=7881
+FLUXER_LIVEKIT_UDP_PORT=7882
+EOF
+cat > "$FLUXER_BUNDLE_DIR/docker-compose.yml" <<'EOF'
+services:
+  release-check:
+    image: fluxer-test:v1
+  edge:
+    image: caddy:2
+    ports:
+      - "80:80"
+    networks:
+      - fluxer
+  livekit:
+    image: livekit/livekit-server
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+    networks:
+      - fluxer
+  postgres:
+    image: postgres:16-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+    networks:
+      - fluxer
+networks:
+  fluxer:
+volumes:
+  edge-data:
+  edge-config:
+  postgres-data:
+  valkey-data:
+  nats-data:
+  meilisearch-data:
+  seaweedfs-data:
+  media-proxy-tmp:
+EOF
+printf 'services: {}\n' > "$FLUXER_BUNDLE_DIR/docker-compose.proxy.yml"
+tar -czf "$TEST_DIR/fluxer-compose.tar.gz" -C "$FLUXER_BUNDLE_DIR" .
+(
+  BASM_ROOT="$FLUXER_ROOT"
+  DEPLOYMENT_MODE=local
+  BIND_ADDRESS=127.0.0.1
+  BASM_CONTAINER_PREFIX=basm-local
+  PRIMARY_DOMAIN=localhost
+  FLUXER_DOMAIN=chat.localhost
+  HTTP_PORT=18080
+  HTTPS_PORT=18443
+  FLUXER_LIVEKIT_TCP_PORT=17881
+  FLUXER_LIVEKIT_UDP_PORT=17882
+  ERP_URL=erp.localhost
+  MAIL_URL=mail.localhost
+  CLOUD_URL=cloud.localhost
+  FLUXER_COMPOSE_BUNDLE="$TEST_DIR/fluxer-compose.tar.gz"
+  render_stack
+  grep -Fq 'Host(`chat.localhost`)' "$BASM_ROOT/config/traefik.yml"
+  source "$ROOT_DIR/modules/fluxer.sh"
+  module_install
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    docker compose --env-file "$BASM_ROOT/modules/fluxer/.env" \
+      -f "$BASM_ROOT/modules/fluxer/docker-compose.yml" \
+      -f "$BASM_ROOT/modules/fluxer/docker-compose.proxy.yml" \
+      -f "$BASM_ROOT/modules/fluxer/docker-compose.basm.yml" config -q
+  fi
+  setup_token="$(sed -n 's/^FLUXER_SETUP_TOKEN=//p' "$BASM_ROOT/modules/fluxer/.env")"
+  [[ "$setup_token" =~ ^[a-f0-9]{64}$ ]]
+  grep -Fqx 'FLUXER_PUBLIC_ORIGIN=http://chat.localhost:18080' "$BASM_ROOT/modules/fluxer/.env"
+  grep -Fqx 'FLUXER_LIVEKIT_USE_EXTERNAL_IP=false' "$BASM_ROOT/modules/fluxer/.env"
+  grep -Fq 'device: ${BASM_ROOT}/data/fluxer/postgres-data' "$BASM_ROOT/modules/fluxer/docker-compose.basm.yml"
+  grep -Fq 'fluxer-db-backups:/backups' "$BASM_ROOT/modules/fluxer/docker-compose.basm.yml"
+  [[ "$(stat -c '%a' "$BASM_ROOT/modules/fluxer/.env")" == 600 ]]
+  module_install
+  [[ "$(sed -n 's/^FLUXER_SETUP_TOKEN=//p' "$BASM_ROOT/modules/fluxer/.env")" == "$setup_token" ]]
+  printf 'services:\n  release-check:\n    image: fluxer-test:v2\n' > "$FLUXER_BUNDLE_DIR/docker-compose.yml"
+  tar -czf "$TEST_DIR/fluxer-compose.tar.gz" -C "$FLUXER_BUNDLE_DIR" .
+  module_update "$BASM_ROOT/modules/fluxer"
+  grep -Fq 'image: fluxer-test:v2' "$BASM_ROOT/modules/fluxer/docker-compose.yml"
+  [[ "$(sed -n 's/^FLUXER_SETUP_TOKEN=//p' "$BASM_ROOT/modules/fluxer/.env")" == "$setup_token" ]]
+  BASM_MODULES='basm fluxer'
+  DEPLOYMENT_MODE=production
+  BIND_ADDRESS=0.0.0.0
+  PRIMARY_DOMAIN=business.example
+  FLUXER_DOMAIN=chat.business.example
+  IP_MODE=static
+  COMPANY_NAME='Acme Ltd'
+  ADMIN_EMAIL=ops@business.example
+  ERP_URL=erp.business.example
+  MAIL_URL=mail.business.example
+  CLOUD_URL=cloud.business.example
+  HTTPS_PORT=443
+  HTTP_PORT=80
+  TIMEZONE=Etc/UTC
+  ERP_ADMIN_PASSWORD=erp-test
+  NEXTCLOUD_ADMIN_USER=basm-admin
+  NEXTCLOUD_ADMIN_PASSWORD=cloud-test
+  POSTAL_ADMIN_PASSWORD=postal-test
+  DB_ROOT_PASSWORD=db-root-test
+  NEXTCLOUD_DB_PASSWORD=cloud-db-test
+  POSTAL_DB_PASSWORD=postal-db-test
+  POSTAL_RAILS_SECRET=postal-sign-test
+  RESTIC_PASSWORD=restic-test
+  BACKUP_LOCATION="$BASM_ROOT/backups"
+  write_summary
+  grep -Fq 'chat      A      PUBLIC_IP   (Fluxer: chat.business.example)' "$BASM_ROOT/handover/dns-records.txt"
+  grep -Fq '"subname":"chat","type":"A","ttl":3600,"records":["$PUBLIC_IP"]' "$BASM_ROOT/handover/dns-records.txt"
+  grep -Fq 'Address: https://chat.business.example:443' "$BASM_ROOT/handover/for-the-user.txt"
+  grep -Fq "One-time setup token: $setup_token" "$BASM_ROOT/handover/for-the-user.txt"
+  grep -Fq 'Fluxer: https://chat.business.example:443' "$OUTPUT_DIR/installation-summary.txt"
+  grep -Fq 'Fluxer voice: 17881/tcp and 17882/udp' "$OUTPUT_DIR/installation-summary.txt"
+)
+
 printf 'Local mode tests passed.\n'

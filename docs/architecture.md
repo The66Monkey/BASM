@@ -83,7 +83,9 @@ changes are logged to `<BASM_ROOT>/logs/ddns.log`.
 
 ## Modules
 
-LAMP, Uptime Kuma, and WireGuard are opt-in and make up the full profile; LAMP
-and Uptime Kuma start automatically when selected. Fluxer and Vaultwarden are
-placeholders and are not included in either profile. The installer and
-maintenance scripts are executable directly from the checkout.
+Fluxer, LAMP, WireGuard, Uptime Kuma, and KeePassXC are opt-in; the full profile
+contains LAMP, WireGuard, and Uptime Kuma. Fluxer runs the official Compose
+release behind BASM Traefik and is updated with its pinned upstream bundle.
+Vaultwarden is deprecated for new installs; KeePassXC is the supported
+credential-manager module. The installer and maintenance scripts are
+executable directly from the checkout.

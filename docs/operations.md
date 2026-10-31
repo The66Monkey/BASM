@@ -68,6 +68,8 @@ not create the pre-update snapshot.
 
 - `sudo ./install.sh --full` adds LAMP, WireGuard, and Uptime Kuma to an
   existing install without touching core services, data, or credentials.
+- `sudo ./install.sh --module fluxer` adds the optional Fluxer chat stack behind
+  BASM Traefik, including its persistent data, database dumps, and update path.
 - `sudo ./install.sh --promote` replaces a local test install with a fresh
   production install, carrying over organization settings and module selection.
 

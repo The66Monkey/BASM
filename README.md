@@ -14,7 +14,7 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - Nextcloud for file sync and collaboration
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules (Fluxer and Vaultwarden are placeholders)
+- Optional Fluxer chat, LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules.
 
 Everything runs as Docker Compose stacks on a single Debian server.
 
