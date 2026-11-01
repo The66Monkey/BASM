@@ -8,6 +8,8 @@ services:
     ports:
       - "${BIND_ADDRESS}:${HTTP_PORT}:80"
       - "${BIND_ADDRESS}:${HTTPS_PORT}:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${BASM_ROOT}/config/traefik.yml:/etc/traefik/dynamic.yml:ro
       - ${BASM_ROOT}/config/traefik-static.yml:/etc/traefik/static.yml:ro
@@ -405,7 +407,7 @@ services:
         set -e;
         restic snapshots >/dev/null 2>&1 || restic init;
         while true; do
-          restic backup /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config /source/fluxer /source/fluxer-config /source/fluxer-db-backups;
+          restic backup /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config /source/fluxer-backups;
           restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune;
           sleep 86400;
         done
@@ -417,9 +419,7 @@ services:
       - ${BASM_ROOT}/data/nextcloud:/source/nextcloud:ro
       - ${BASM_ROOT}/data/db-backups:/source/postal-db-dumps:ro
       - ${BASM_ROOT}/config:/source/config:ro
-      - ${BASM_ROOT}/data/fluxer:/source/fluxer:ro
-      - ${BASM_ROOT}/modules/fluxer:/source/fluxer-config:ro
-      - ${BASM_ROOT}/data/fluxer/db-backups:/source/fluxer-db-backups:ro
+      - ${BACKUP_LOCATION}/fluxer:/source/fluxer-backups:ro
       - ${BACKUP_LOCATION}/restic:/repository
     depends_on:
       db-backup:

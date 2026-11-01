@@ -13,8 +13,9 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/handover/` | For-the-User and For-IT documents (`0700`) |
 | `<BASM_ROOT>/maintenance/` | Protected automatic updater |
 | `<BASM_ROOT>/logs/` | `automatic-updates.log`, `ddns.log` |
-| `<BASM_ROOT>/modules/` | Active optional modules, including Fluxer’s Compose bundle and root-only `.env` |
-| `<BASM_ROOT>/data/fluxer/` | Fluxer service volumes and PostgreSQL dumps |
+| `<BASM_ROOT>/modules/` | Active optional modules (LAMP, Uptime Kuma, WireGuard, Fluxer) |
+| `<BASM_ROOT>/modules/fluxer/` | Fluxer `rexctl` settings and managed Compose project |
+| `<BACKUP_LOCATION>/fluxer/` | Fluxer archive backups, included in Restic snapshots |
 | `<BASM_ROOT>/data/db-backups` | Database dumps (`0700`/`0600`) |
 | `<BASM_ROOT>/backups/restic` | Default local Restic repository (local mode) |
 | `/etc/cron.d/` | Deployment-specific update and DDNS jobs |
@@ -23,9 +24,10 @@ for production and `/opt/basm-local` for local mode.
 
 - Core stack: ERPNext, Nextcloud, Postal, Traefik, and Restic backup job.
 - Optional modules run as separate Compose projects named `<prefix>-lamp`,
-  `<prefix>-uptime-kuma`, and `<prefix>-fluxer`.
-- Fluxer’s Caddy edge joins BASM’s private Docker network; BASM Traefik provides
-  its public hostname and TLS. Voice media uses separately published TCP/UDP ports.
+  `<prefix>-uptime-kuma`, and `<prefix>-fluxer` (the Fluxer project is managed
+  by its upstream `rexctl` CLI).
+- Fluxer serves through BASM Traefik; voice media uses separately published
+  TCP/UDP ports.
 - Local mode prefixes container names with `basm-local-` to avoid collisions.
 
 ## Hostnames

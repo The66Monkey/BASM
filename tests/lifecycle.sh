@@ -22,6 +22,129 @@ port_in_use() { return 1; }
 check_debian() { :; }
 export -f docker
 
+(
+  BASM_ROOT="$TEST_DIR/fluxer-root"
+  FLUXER_TEST_LOG="$TEST_DIR/fluxer-module.log"
+  FLUXER_DOMAIN=chat.acme.example
+  FLUXER_PROXY_PORT=18088
+  FLUXER_VOICE_TCP_PORT=17881
+  FLUXER_VOICE_UDP_PORT=17882
+  BASM_CONTAINER_PREFIX=basm
+  COMPANY_NAME='Acme Ltd'
+  DEPLOYMENT_MODE=production
+  BACKUP_LOCATION="$TEST_DIR/fluxer-backups"
+  : > "$FLUXER_TEST_LOG"
+  docker() { printf '172.28.0.1\n'; }
+  curl() {
+    local destination=""
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == -o ]]; then destination="$2"; shift 2; else shift; fi
+    done
+    printf '#!/usr/bin/env bash\n' > "$destination"
+  }
+  bash() { printf 'installer %s\n' "$*" >> "$FLUXER_TEST_LOG"; }
+  rexctl() { printf 'rexctl %s\n' "$*" >> "$FLUXER_TEST_LOG"; }
+  source "$MODULES_DIR/fluxer.sh"
+  module_install
+  module_start
+  module_update
+  module_stop
+  module_uninstall
+  grep -Fq 'install --dir '"$BASM_ROOT"'/modules/fluxer --project basm-fluxer --domain chat.acme.example' "$FLUXER_TEST_LOG"
+  grep -Fq -- '--registration invite --sign-in username --skip-email --setup terminal' "$FLUXER_TEST_LOG"
+  grep -Fq -- '--behind-proxy --bind 172.28.0.1:18088' "$FLUXER_TEST_LOG"
+  grep -Fq -- '--voice-tcp-port 17881 --voice-udp-port 17882' "$FLUXER_TEST_LOG"
+  [[ "$(stat -c '%a' "$BACKUP_LOCATION/fluxer")" == 700 ]]
+  grep -Fq 'rexctl backup location '"$BACKUP_LOCATION"'/fluxer --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  grep -Fq 'rexctl backup keep 7 --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  grep -Fq 'rexctl start --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  grep -Fq 'rexctl upgrade --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  grep -Fq 'rexctl stop --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  grep -Fq 'rexctl uninstall --confirm chat.acme.example --dir '"$BASM_ROOT"'/modules/fluxer' "$FLUXER_TEST_LOG"
+  [[ ! -e "$BASM_ROOT/modules/fluxer/fluxer-install.sh" ]]
+  if ( DEPLOYMENT_MODE=local; module_install ); then exit 1; fi
+)
+
+(
+  ACTION_ROOT="$TEST_DIR/fluxer-action"
+  ACTION_LOG="$TEST_DIR/fluxer-action.log"
+  mkdir -p "$ACTION_ROOT/config"
+  printf 'BASM_ROOT="%s"\nBASM_MODULES="basm fluxer"\nFLUXER_DOMAIN="chat.acme.example"\n' \
+    "$ACTION_ROOT" > "$ACTION_ROOT/config/basm.env"
+  rexctl() { printf '%s\n' "$*" >> "$ACTION_LOG"; }
+  export -f rexctl
+  unset MODULES_DIR
+  run_module_action_for_root "$ACTION_ROOT" fluxer stop
+  grep -Fq 'stop --dir '"$ACTION_ROOT"'/modules/fluxer' "$ACTION_LOG"
+)
+
+(
+  BASM_MODULES='basm fluxer'
+  PRIMARY_DOMAIN=acme.example
+  ERP_URL=erp.acme.example
+  MAIL_URL=mail.acme.example
+  CLOUD_URL=cloud.acme.example
+  FLUXER_DOMAIN=chat.acme.example
+  DNS_FILE="$TEST_DIR/fluxer-dns.txt"
+  write_dns_records "$DNS_FILE"
+  grep -Fq '(Fluxer chat: chat.acme.example)' "$DNS_FILE"
+  grep -Fq '"subname":"chat","type":"A","ttl":3600,"records":["$PUBLIC_IP"]' "$DNS_FILE"
+  BASM_MODULES=basm
+  write_dns_records "$DNS_FILE"
+  if grep -Fq 'chat               A      PUBLIC_IP' "$DNS_FILE"; then exit 1; fi
+)
+
+(
+  set_port_defaults standard
+  BASM_MODULES='basm fluxer'
+  validate_port_plan
+  FLUXER_VOICE_TCP_PORT="$HTTP_PORT"
+  if validate_port_plan; then exit 1; fi
+  FLUXER_VOICE_TCP_PORT=17881
+  BASM_MODULES='basm fluxer wireguard'
+  WIREGUARD_PORT="$FLUXER_VOICE_UDP_PORT"
+  if validate_port_plan; then exit 1; fi
+)
+
+(
+  BASM_ROOT="$TEST_DIR/fluxer-render"
+  mkdir -p "$BASM_ROOT/config"
+  DEPLOYMENT_MODE=production
+  BIND_ADDRESS=0.0.0.0
+  BASM_CONTAINER_PREFIX=basm
+  PRIMARY_DOMAIN=acme.example
+  ERP_URL=erp.acme.example
+  MAIL_URL=mail.acme.example
+  CLOUD_URL=cloud.acme.example
+  FLUXER_DOMAIN=chat.acme.example
+  ADMIN_EMAIL=ops@acme.dk
+  BASM_MODULES='basm fluxer'
+  set_port_defaults standard
+  render_stack
+  grep -Fq 'Host(`chat.acme.example`)' "$BASM_ROOT/config/traefik.yml"
+  grep -Fq 'http://host.docker.internal:8088' "$BASM_ROOT/config/traefik.yml"
+  grep -Fq 'host.docker.internal:host-gateway' "$BASM_ROOT/docker-compose.yml"
+  grep -Fq '/source/fluxer-backups' "$BASM_ROOT/docker-compose.yml"
+  BASM_MODULES=basm
+  render_stack
+  if grep -Fq 'fluxer-service' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
+)
+
+(
+  BASM_ROOT="$TEST_DIR/fluxer-maintenance"
+  BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+  BASM_MODULES='basm fluxer'
+  BACKUP_LOCATION="$BASM_ROOT/backups"
+  BASM_CRON_DIR="$TEST_DIR/fluxer-cron"
+  LOG_FILE="$TEST_DIR/fluxer-maintenance.log"
+  install_auto_updates
+  [[ -s "$BASM_ROOT/maintenance/modules/fluxer.sh" ]]
+  [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/modules/fluxer.sh")" == 600 ]]
+  [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/run-fluxer-backup.sh")" == 700 ]]
+  bash -n "$BASM_ROOT/maintenance/run-fluxer-backup.sh"
+  grep -Fq '30 2 * * * root /bin/bash' "$(fluxer_backup_cron_file "$BASM_ROOT")"
+)
+
 LOCAL_BASM_ROOT="$TEST_DIR/basm-local"
 PRODUCTION_BASM_ROOT="$TEST_DIR/basm"
 OUTPUT_DIR="$TEST_DIR/output"

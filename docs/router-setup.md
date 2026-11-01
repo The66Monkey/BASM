@@ -25,6 +25,10 @@ Forward the following ports to the BASM server:
 - TCP 443 -> BASM host
 - TCP 25 -> BASM host for Postal SMTP
 
+When Fluxer is selected, also forward its configured voice-media TCP and UDP
+ports to the same ports on the BASM host. The values are listed in the private
+IT handover. Do not forward Fluxer's internal proxy listener.
+
 These are the standard ports. With custom server ports, forward public TCP 80
 to the selected HTTP port, TCP 443 to the selected HTTPS port, and TCP 25 to
 the selected SMTP port. Also forward the selected HTTP/HTTPS ports to the same

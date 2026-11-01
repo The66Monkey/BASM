@@ -48,7 +48,16 @@ It updates images within their configured tags only: not Debian packages, the
 BASM checkout, or version-pinned applications. Pinned versions need periodic
 IT review. Six-month updates are not a substitute for urgent security fixes.
 
+When Fluxer is selected, the BASM updater also calls Fluxer's `rexctl upgrade`;
+Fluxer manages its own release and takes its own pre-upgrade backup. Scheduled
+BASM updates archive Fluxer before the encrypted pre-update Restic snapshot.
+
 Logs: `<BASM_ROOT>/logs/automatic-updates.log`.
+
+Fluxer also uses its upstream `rexctl` manager. BASM archives Fluxer daily at
+02:30 and includes that archive in Restic; scheduled BASM upgrades create an
+additional pre-update archive. Check `<BASM_ROOT>/logs/fluxer-backup.log` for
+the daily job.
 
 Disable automatic runs (survives installer reruns); remove the file to re-enable:
 

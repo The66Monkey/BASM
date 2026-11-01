@@ -198,22 +198,26 @@ ensure_port_defaults() {
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
   local default_fluxer_tcp=7881 default_fluxer_udp=7882
   local default_smtp=25
+  local default_fluxer_proxy=8088 default_fluxer_voice_tcp=17881 default_fluxer_voice_udp=17882
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     default_http=18080 default_https=18443 default_lamp=18081 default_kuma=18301 default_wireguard=18520
     default_fluxer_tcp=17881 default_fluxer_udp=17882
     default_smtp=2525
+    default_fluxer_proxy=18088 default_fluxer_voice_tcp=17881 default_fluxer_voice_udp=17882
   fi
   HTTP_PORT="${HTTP_PORT:-$default_http}"
   HTTPS_PORT="${HTTPS_PORT:-$default_https}"
   LAMP_PORT="${LAMP_PORT:-$default_lamp}"
   UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-$default_kuma}"
   WIREGUARD_PORT="${WIREGUARD_PORT:-$default_wireguard}"
-  FLUXER_LIVEKIT_TCP_PORT="${FLUXER_LIVEKIT_TCP_PORT:-$default_fluxer_tcp}"
-  FLUXER_LIVEKIT_UDP_PORT="${FLUXER_LIVEKIT_UDP_PORT:-$default_fluxer_udp}"
+  FLUXER_PROXY_PORT="${FLUXER_PROXY_PORT:-$default_fluxer_proxy}"
+  FLUXER_VOICE_TCP_PORT="${FLUXER_VOICE_TCP_PORT:-$default_fluxer_voice_tcp}"
+  FLUXER_VOICE_UDP_PORT="${FLUXER_VOICE_UDP_PORT:-$default_fluxer_voice_udp}"
   FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.${PRIMARY_DOMAIN:-example.com}}"
   SMTP_PORT="${SMTP_PORT:-$default_smtp}"
   SSH_PORT="${SSH_PORT:-22}"
-  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT
+  export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_PROXY_PORT \
+    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT
 }
 
 set_port_defaults() {
@@ -222,8 +226,9 @@ set_port_defaults() {
   LAMP_PORT=8080
   UPTIME_KUMA_PORT=3001
   WIREGUARD_PORT=51820
-  FLUXER_LIVEKIT_TCP_PORT=7881
-  FLUXER_LIVEKIT_UDP_PORT=7882
+  FLUXER_PROXY_PORT=8088
+  FLUXER_VOICE_TCP_PORT=17881
+  FLUXER_VOICE_UDP_PORT=17882
   SMTP_PORT=25
   if [[ "$1" == local ]]; then
     HTTP_PORT=18080
@@ -231,8 +236,9 @@ set_port_defaults() {
     LAMP_PORT=18081
     UPTIME_KUMA_PORT=18301
     WIREGUARD_PORT=18520
-    FLUXER_LIVEKIT_TCP_PORT=17881
-    FLUXER_LIVEKIT_UDP_PORT=17882
+    FLUXER_PROXY_PORT=18088
+    FLUXER_VOICE_TCP_PORT=17881
+    FLUXER_VOICE_UDP_PORT=17882
     SMTP_PORT=2525
   fi
 }
@@ -245,7 +251,7 @@ validate_port_plan() {
     case "$module_name" in
       lamp) tcp_ports+=(LAMP_PORT) ;;
       uptime-kuma) tcp_ports+=(UPTIME_KUMA_PORT) ;;
-      fluxer) tcp_ports+=(FLUXER_LIVEKIT_TCP_PORT) ;;
+      fluxer) tcp_ports+=(FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT) ;;
     esac
   done
   for variable in "${tcp_ports[@]}"; do
@@ -261,12 +267,13 @@ validate_port_plan() {
   validate_port "$WIREGUARD_PORT" || return 1
   if module_selected wireguard; then assigned_udp["$WIREGUARD_PORT"]="WIREGUARD_PORT"; fi
   if module_selected fluxer; then
-    port="$FLUXER_LIVEKIT_UDP_PORT"
-    validate_port "$port" || { warn "Invalid port for FLUXER_LIVEKIT_UDP_PORT: $port"; return 1; }
+    port="$FLUXER_VOICE_UDP_PORT"
+    validate_port "$port" || { warn "Invalid port for FLUXER_VOICE_UDP_PORT: $port"; return 1; }
     if [[ -n "${assigned_udp[$port]:-}" ]]; then
-      warn "FLUXER_LIVEKIT_UDP_PORT conflicts with ${assigned_udp[$port]} on UDP port $port."
+      warn "FLUXER_VOICE_UDP_PORT conflicts with ${assigned_udp[$port]} on UDP port $port."
       return 1
     fi
+    assigned_udp[$port]=FLUXER_VOICE_UDP_PORT
   fi
 }
 
@@ -282,7 +289,9 @@ configure_ports() {
       uptime-kuma) variable=UPTIME_KUMA_PORT ;;
       wireguard) variable=WIREGUARD_PORT ;;
       fluxer)
-        custom_ports+=(FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT)
+        for variable in FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT; do
+          custom_ports+=("$variable")
+        done
         continue
         ;;
       *) continue ;;
@@ -305,12 +314,13 @@ configure_ports() {
   done
   for variable in "${custom_ports[@]}"; do
     protocol=tcp
-    if [[ "$variable" == WIREGUARD_PORT || "$variable" == FLUXER_LIVEKIT_UDP_PORT ]]; then protocol=udp; fi
+    if [[ "$variable" == WIREGUARD_PORT || "$variable" == FLUXER_VOICE_UDP_PORT ]]; then protocol=udp; fi
     if port_in_use "${!variable}" "$protocol"; then
       warn "$variable (${!variable}/$protocol) is already in use on this host. Stop its current owner or rerun with custom ports."
     fi
   done
-  export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT
+  export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT \
+    FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
 }
 
 validate_local_bind_address() {
@@ -338,12 +348,14 @@ configure_local_mode() {
   ERP_URL="erp.$PRIMARY_DOMAIN"
   MAIL_URL="mail.$PRIMARY_DOMAIN"
   CLOUD_URL="cloud.$PRIMARY_DOMAIN"
+  FLUXER_DOMAIN="chat.$PRIMARY_DOMAIN"
   BACKUP_LOCATION="$BASM_ROOT/backups"
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL FLUXER_DOMAIN BACKUP_LOCATION
 }
 
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
+  local fluxer_entrypoint=websecure
   local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS}'
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   export NEXTCLOUD_TRUSTED_DOMAINS="${CLOUD_URL:-}"
@@ -354,8 +366,39 @@ render_stack() {
   fi
   export BASM_CONTAINER_PREFIX="${BASM_CONTAINER_PREFIX:-basm}"
   ensure_port_defaults
+  if module_selected fluxer; then
+    FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
+    export FLUXER_DOMAIN FLUXER_PROXY_PORT
+  fi
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
-  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${FLUXER_DOMAIN} ${BIND_ADDRESS} ${HTTPS_PORT}' < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
+  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
+    < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
+  if module_selected fluxer; then
+    if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
+    cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
+
+  routers:
+    fluxer:
+      rule: "Host(\`$FLUXER_DOMAIN\`)"
+      service: fluxer-service
+      entryPoints:
+        - $fluxer_entrypoint
+EOF
+    if [[ "$fluxer_entrypoint" == websecure ]]; then
+      cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
+      tls:
+        certResolver: letsencrypt
+EOF
+    fi
+    cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
+
+  services:
+    fluxer-service:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:$FLUXER_PROXY_PORT"
+EOF
+  fi
   envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$BASM_ROOT/config/traefik-static.yml"
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     cat >> "$BASM_ROOT/config/traefik-static.yml" <<EOF
@@ -532,9 +575,9 @@ SSH_PORT=$SSH_PORT
 LAMP_PORT=$LAMP_PORT
 UPTIME_KUMA_PORT=$UPTIME_KUMA_PORT
 WIREGUARD_PORT=$WIREGUARD_PORT
-FLUXER_DOMAIN="$FLUXER_DOMAIN"
-FLUXER_LIVEKIT_TCP_PORT=$FLUXER_LIVEKIT_TCP_PORT
-FLUXER_LIVEKIT_UDP_PORT=$FLUXER_LIVEKIT_UDP_PORT
+FLUXER_PROXY_PORT=$FLUXER_PROXY_PORT
+FLUXER_VOICE_TCP_PORT=$FLUXER_VOICE_TCP_PORT
+FLUXER_VOICE_UDP_PORT=$FLUXER_VOICE_UDP_PORT
 ERP_URL="$ERP_URL"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
@@ -555,6 +598,7 @@ NEXTCLOUD_DB_PASSWORD="$NEXTCLOUD_DB_PASSWORD"
 SMTP_BIND_ADDRESS="$SMTP_BIND_ADDRESS"
 SMTP_PORT=$SMTP_PORT
 RESTIC_PASSWORD="$RESTIC_PASSWORD"
+FLUXER_DOMAIN="$FLUXER_DOMAIN"
 EOF
   chmod 600 "$BASM_ENV_FILE"
 }
@@ -626,6 +670,10 @@ run_wizard() {
   fi
 
   select_modules
+  if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
+    fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
+  fi
+  FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
   configure_ports
   if port_in_use "$SMTP_PORT"; then
     warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
@@ -654,7 +702,9 @@ configure_system() {
 
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     local host memory_kib
-    for host in "$ERP_URL" "$MAIL_URL" "$CLOUD_URL"; do
+    local -a service_hosts=("$ERP_URL" "$MAIL_URL" "$CLOUD_URL")
+    module_selected fluxer && service_hosts+=("$FLUXER_DOMAIN")
+    for host in "${service_hosts[@]}"; do
       if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
         warn "DNS for $host does not resolve yet; public routes and TLS issuance will not be ready."
       fi
@@ -731,13 +781,20 @@ update_cron_file() {
   printf '%s/basm-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
 }
 
+fluxer_backup_cron_file() {
+  local identifier
+  identifier="$(printf '%s' "$1" | sha256sum | cut -c1-16)"
+  printf '%s/basm-fluxer-backup-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
+}
+
 install_auto_updates() (
   umask 077
-  local maintenance_dir="$BASM_ROOT/maintenance" cron_file
+  local maintenance_dir="$BASM_ROOT/maintenance" cron_file fluxer_backup_cron
   ensure_packages cron util-linux
   validate_backup_path "$BASM_ROOT" || fail "Deployment path is not safe for cron."
   [[ "$BASM_ROOT" != *%* ]] || fail "Deployment path cannot contain a percent sign."
   cron_file="$(update_cron_file "$BASM_ROOT")"
+  fluxer_backup_cron="$(fluxer_backup_cron_file "$BASM_ROOT")"
   install -d -m 700 "$maintenance_dir" "$maintenance_dir/modules" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
   install -m 700 "$ROOT_DIR/update.sh" "$maintenance_dir/update.sh" || fail "Cannot install updater."
   install -m 600 "$ROOT_DIR/modules/core.sh" "$maintenance_dir/modules/core.sh" || fail "Cannot install updater helpers."
@@ -762,6 +819,40 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 0 3 1 1,7 * root /bin/bash "$maintenance_dir/run-updates.sh"
 EOF
   chmod 644 "$cron_file" || fail "Cannot set cron permissions."
+  if module_selected fluxer; then
+    cat > "$maintenance_dir/run-fluxer-backup.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BASM_ROOT="$BASM_ROOT"
+BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+exec >> "$BASM_ROOT/logs/fluxer-backup.log" 2>&1
+exec 9> "$BASM_ROOT/logs/update.lock"
+flock -n 9 || exit 0
+source "$maintenance_dir/modules/core.sh"
+load_deployment_env
+source "$maintenance_dir/modules/fluxer.sh"
+module_backup
+for attempt in {1..5}; do
+  if basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" \\
+    exec -T restic-backup restic backup /source/fluxer-backups; then
+    exit 0
+  fi
+  /bin/sleep 30
+done
+fail "Could not add the Fluxer archive to the encrypted Restic repository."
+EOF
+    chmod 700 "$maintenance_dir/run-fluxer-backup.sh" || fail "Cannot protect Fluxer backup launcher."
+    cat > "$fluxer_backup_cron" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+30 2 * * * root /bin/bash "$maintenance_dir/run-fluxer-backup.sh"
+EOF
+    chmod 644 "$fluxer_backup_cron" || fail "Cannot set Fluxer backup cron permissions."
+  else
+    rm -f "$fluxer_backup_cron" "$maintenance_dir/run-fluxer-backup.sh"
+  fi
   systemctl enable --now cron || fail "Cannot enable the automatic update scheduler."
   log "Automatic application updates scheduled for January 1 and July 1 at 03:00 (server time)."
 )
@@ -848,6 +939,7 @@ load_deployment_env() {
     validate_local_bind_address "$BIND_ADDRESS" || fail "Unsafe local bind address."
   fi
   ensure_port_defaults
+  FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
 }
 
 add_modules_to_selection() {
@@ -860,10 +952,19 @@ add_modules_to_selection() {
 
 module_port_variable() {
   case "$1" in
-    lamp) printf 'LAMP_PORT' ;;
-    uptime-kuma) printf 'UPTIME_KUMA_PORT' ;;
-    wireguard) printf 'WIREGUARD_PORT' ;;
-    fluxer) printf 'FLUXER_LIVEKIT_TCP_PORT' ;;
+    lamp) printf '%s' LAMP_PORT ;;
+    uptime-kuma) printf '%s' UPTIME_KUMA_PORT ;;
+    wireguard) printf '%s' WIREGUARD_PORT ;;
+    fluxer) printf '%s' FLUXER_PROXY_PORT ;;
+  esac
+}
+
+module_port_variables() {
+  case "$1" in
+    lamp) printf '%s\n' LAMP_PORT ;;
+    uptime-kuma) printf '%s\n' UPTIME_KUMA_PORT ;;
+    wireguard) printf '%s\n' WIREGUARD_PORT ;;
+    fluxer) printf '%s\n' FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT ;;
   esac
 }
 
@@ -881,34 +982,32 @@ upgrade_modules() {
     module_selected "$module_name" || added+=("$module_name")
   done
   add_modules_to_selection "$@"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]] && module_selected fluxer; then
+    fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
+  fi
 
   while ! validate_port_plan; do
     warn "The current port plan conflicts with the requested modules. Choose new module ports."
     for module_name in "${added[@]}"; do
-      variable="$(module_port_variable "$module_name")"
-      if [[ -n "$variable" ]]; then
+      while IFS= read -r variable; do
+        [[ -n "$variable" ]] || continue
         printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
-      fi
-      if [[ "$module_name" == fluxer ]]; then
-        variable=FLUXER_LIVEKIT_UDP_PORT
-        printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
-      fi
+      done < <(module_port_variables "$module_name")
     done
     PORT_PROFILE=custom
   done
   for module_name in "${added[@]}"; do
-    variable="$(module_port_variable "$module_name")"
-    [[ -n "$variable" ]] || continue
-    protocol=tcp
-    if [[ "$variable" == WIREGUARD_PORT ]]; then protocol=udp; fi
-    if port_in_use "${!variable}" "$protocol"; then
-      warn "$variable (${!variable}/$protocol) is already in use on this host."
-    fi
-    if [[ "$module_name" == fluxer ]] && port_in_use "$FLUXER_LIVEKIT_UDP_PORT" udp; then
-      warn "FLUXER_LIVEKIT_UDP_PORT ($FLUXER_LIVEKIT_UDP_PORT/udp) is already in use on this host."
-    fi
+    while IFS= read -r variable; do
+      [[ -n "$variable" ]] || continue
+      protocol=tcp
+      if [[ "$variable" == WIREGUARD_PORT || "$variable" == FLUXER_VOICE_UDP_PORT ]]; then protocol=udp; fi
+      if port_in_use "${!variable}" "$protocol"; then
+        warn "$variable (${!variable}/$protocol) is already in use on this host."
+      fi
+    done < <(module_port_variables "$module_name")
   done
-  export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT
+  export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_PROXY_PORT \
+    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
 
   write_env_file
   for module_name in "$@"; do
@@ -927,11 +1026,26 @@ upgrade_to_full() {
   upgrade_modules $BASM_FULL_MODULES
 }
 
+run_module_action_for_root() (
+  local root="$1" module_name="$2" action="$3" action_function
+  [[ -f "$root/config/basm.env" ]] || return 0
+  set -a
+  source "$root/config/basm.env"
+  set +a
+  BASM_ROOT="$root"
+  module_selected "$module_name" || return 0
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$module_name.sh"
+  action_function="module_$action"
+  "$action_function"
+)
+
 # Stops a deployment's containers without removing data or volumes.
 stop_deployment() {
   local root="$1" compose_file
   command -v docker >/dev/null 2>&1 || return 0
+  run_module_action_for_root "$root" fluxer stop || warn "Could not stop Fluxer at $root"
   while IFS= read -r compose_file; do
+    [[ "$(basename "$(dirname "$compose_file")")" == fluxer ]] && continue
     module_compose "$compose_file" down --remove-orphans || warn "Could not stop $compose_file"
   done < <(module_compose_files "$root")
   if [[ -f "$root/docker-compose.yml" ]]; then
@@ -947,8 +1061,10 @@ start_deployment() {
     basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" up -d --remove-orphans || warn "Could not restart the core stack at $root"
   fi
   while IFS= read -r compose_file; do
+    [[ "$(basename "$(dirname "$compose_file")")" == fluxer ]] && continue
     module_compose "$compose_file" up -d --remove-orphans || warn "Could not restart $compose_file"
   done < <(module_compose_files "$root")
+  run_module_action_for_root "$root" fluxer start || warn "Could not restart Fluxer at $root"
 }
 
 # Stops every BASM stack under a root, removes its containers, networks and
@@ -957,7 +1073,8 @@ start_deployment() {
 purge_deployment() {
   local root="$1" compose_file
   [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
-  rm -f "$(update_cron_file "$root")" "$(ddns_cron_file "$root")"
+  rm -f "$(update_cron_file "$root")" "$(ddns_cron_file "$root")" "$(fluxer_backup_cron_file "$root")"
+  run_module_action_for_root "$root" fluxer uninstall || fail "Could not remove Fluxer at $root; deployment data was kept."
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
       log "Stopping module stack $compose_file"
@@ -1002,7 +1119,7 @@ promote_to_production() {
   [[ "$answer" == promote ]] || { log "Promotion cancelled."; return 1; }
 
   for variable in DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE HTTP_PORT HTTPS_PORT \
-    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_DOMAIN FLUXER_LIVEKIT_TCP_PORT FLUXER_LIVEKIT_UDP_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
+    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
     BACKUP_LOCATION PRIMARY_DOMAIN DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD \
     NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET \
     POSTAL_WEB_PROTOCOL RESTIC_PASSWORD; do
@@ -1047,12 +1164,10 @@ port_summary() {
       uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
       fluxer)
-        if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
-          printf 'Fluxer: http://%s:%s\n' "$FLUXER_DOMAIN" "$HTTP_PORT"
-        else
-          printf 'Fluxer: https://%s:%s\n' "$FLUXER_DOMAIN" "$HTTPS_PORT"
+        printf 'Fluxer: https://%s:%s (proxy listener %s/tcp)\n' "$FLUXER_DOMAIN" "$HTTPS_PORT" "$FLUXER_PROXY_PORT"
+        if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+          printf 'Fluxer voice media: %s/tcp and %s/udp\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"
         fi
-        printf 'Fluxer voice: %s/tcp and %s/udp\n' "$FLUXER_LIVEKIT_TCP_PORT" "$FLUXER_LIVEKIT_UDP_PORT"
         ;;
     esac
   done
@@ -1084,7 +1199,7 @@ write_dns_records() {
   erp_sub="$(dns_subname "$ERP_URL")"
   cloud_sub="$(dns_subname "$CLOUD_URL")"
   mail_sub="$(dns_subname "$MAIL_URL")"
-  fluxer_sub="$(dns_subname "$FLUXER_DOMAIN")"
+  fluxer_sub="$(dns_subname "${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}")"
   cat > "$file" <<EOF
 DNS records for $d
 ====================
@@ -1097,7 +1212,7 @@ Core hostnames (A)
   ${erp_sub:-@}     A      PUBLIC_IP
   ${cloud_sub:-@}   A      PUBLIC_IP
   ${mail_sub:-@}    A      PUBLIC_IP   (Postal web UI and SMTP: $MAIL_URL)
-$(if module_selected fluxer; then printf '  %s      A      PUBLIC_IP   (Fluxer: %s)\n' "$fluxer_sub" "$FLUXER_DOMAIN"; fi)
+$(if module_selected fluxer; then printf '  %-17s A      PUBLIC_IP   (Fluxer chat: %s)\n' "${fluxer_sub:-@}" "$FLUXER_DOMAIN"; fi)
   mx                A      PUBLIC_IP   (inbound mail host)
 $(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
 Postal server-wide records
@@ -1270,6 +1385,13 @@ No account is generated. IT must complete first-time setup on the private
 network and record the chosen username and password in your password manager.
 EOF
   fi
+  if module_selected fluxer; then
+    cat >> "$handover_dir/for-the-user.txt" <<EOF
+Community chat and calls (Fluxer): https://$FLUXER_DOMAIN
+The first Fluxer administrator account is created interactively during setup.
+IT must record its login details securely and create named accounts for users.
+EOF
+  fi
   if module_selected lamp; then
     printf 'Website (LAMP): http://%s:%s - no login is created.\n' "$PRIMARY_DOMAIN" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
   fi
@@ -1320,15 +1442,12 @@ EOF
   fi
 
   if module_selected fluxer; then
-    local fluxer_setup_token
-    fluxer_setup_token="$(sed -n 's/^FLUXER_SETUP_TOKEN=//p' "$BASM_ROOT/modules/fluxer/.env" | head -n 1)"
     cat >> "$handover_dir/for-the-user.txt" <<EOF
 
 Fluxer (self-hosted chat)
 Address: $scheme://$FLUXER_DOMAIN:$web_port
-One-time setup token: $fluxer_setup_token
-Use this token to create the first Fluxer administrator account. It is not a
-login password and is only needed during initial setup.
+The first administrator account is created interactively during installation.
+Have IT record its login details securely; BASM does not store them here.
 EOF
   fi
 
@@ -1350,7 +1469,7 @@ two-factor authentication where available. Record changed passwords separately;
 these documents contain initial values, not live passwords from applications.
 $(if module_selected keepass; then printf '%s\n' \
   'KeePass is enabled: all service credentials are in config/credentials.kdbx.' \
-  'The user document contains KeePass access and any one-time Fluxer setup token.' \
+  'Record Fluxer administrator credentials in KeePass after interactive setup.' \
   'Record account changes' \
   'and manually created logins in KeePass. Deliver an independent recovery copy' \
   'of the database and master password before relying on encrypted backups.'; fi)
@@ -1387,7 +1506,7 @@ EOF
     if module_selected fluxer; then
       cat >> "$handover_dir/for-it.txt" <<EOF
 Fluxer: http://$FLUXER_DOMAIN:$HTTP_PORT
-Voice ports bind to $BIND_ADDRESS on TCP $FLUXER_LIVEKIT_TCP_PORT and UDP $FLUXER_LIVEKIT_UDP_PORT.
+Voice ports bind to $BIND_ADDRESS on TCP $FLUXER_VOICE_TCP_PORT and UDP $FLUXER_VOICE_UDP_PORT.
 Do not forward these ports on a router in local mode.
 EOF
     fi
@@ -1408,6 +1527,7 @@ command that creates them. The A records point to the public IPv4 for:
   $ERP_URL
   $MAIL_URL
   $CLOUD_URL
+$(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
   mx.$PRIMARY_DOMAIN
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
@@ -1422,6 +1542,7 @@ Service        Protocol    External port    Internal (server) port
 HTTP           TCP         $HTTP_PORT               $HTTP_PORT
 HTTPS          TCP         $HTTPS_PORT              $HTTPS_PORT
 Postal SMTP    TCP         25               $SMTP_PORT
+$(if module_selected fluxer; then printf 'Fluxer media   TCP         %s               %s\nFluxer media   UDP         %s               %s\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 If HTTP uses a custom port, ALSO forward external TCP 80 to internal $HTTP_PORT.
 If HTTPS uses a custom port, ALSO forward external TCP 443 to internal $HTTPS_PORT.
 These additional rules allow normal browser access, HTTPS redirects, and
@@ -1436,7 +1557,7 @@ Do not forward databases, Redis, Docker, monitoring, or router administration.
 Do not forward SSH ($SSH_PORT) by default. Prefer a configured VPN for support.
 LAMP and Uptime Kuma have no BASM-managed TLS or access control; keep their
 ports private and restrict them on the host as well as at the router.
-$(if module_selected fluxer; then printf 'Fluxer voice requires TCP %s and UDP %s forwarded to the server for calls.\n' "$FLUXER_LIVEKIT_TCP_PORT" "$FLUXER_LIVEKIT_UDP_PORT"; fi)
+$(if module_selected fluxer; then printf 'Fluxer voice requires TCP %s and UDP %s forwarded to the server for calls.\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 
 5. FINISH MAIL SETUP
 Sign in to Postal using the user document. Configure your organization's mail
@@ -1459,11 +1580,12 @@ From the BASM checkout, inspect the services:
 One-shot initializer containers should exit successfully (code 0). Investigate
 unhealthy containers, restart loops, and nonzero exits before handing over.
 Open each service URL and actually sign in. In production, test public URLs
-using mobile data with Wi-Fi off. Use https://$ERP_URL, https://$CLOUD_URL and
-https://$MAIL_URL when external 443 maps to the selected server HTTPS port.
+using mobile data with Wi-Fi off. Use https://$ERP_URL, https://$CLOUD_URL,
+https://$MAIL_URL$(if module_selected fluxer; then printf ' and https://%s' "$FLUXER_DOMAIN"; fi) when external 443 maps to the selected server HTTPS port.
 Do not dismiss certificate warnings. DNS or port changes can take time;
 recheck DNS and Traefik logs if certificates are not issued.
 If Uptime Kuma is selected, complete its first-run account setup privately.
+$(if module_selected fluxer; then printf 'Fluxer is managed by rexctl under %s/modules/fluxer. Confirm the owner can sign in to %s and test voice calls from an external network over TCP %s and UDP %s.\n' "$BASM_ROOT" "$FLUXER_DOMAIN" "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 WireGuard only generates files; it is NOT an active VPN. Follow the WireGuard
 documentation to install/enable a server and create a separate peer per person.
 Only after enabling it, forward UDP $WIREGUARD_PORT to the server's same port
@@ -1593,6 +1715,7 @@ DNS Records Required:
 - A record for $ERP_URL -> Public IP
 - A record for $MAIL_URL -> Public IP
 - A record for $CLOUD_URL -> Public IP
+$(if module_selected fluxer; then printf '%s\n' "- A record for $FLUXER_DOMAIN -> Public IP"; fi)
 - MX, SPF, DKIM, and DMARC records for the mail domains shown in Postal
 
 Router Port Forwarding Required:

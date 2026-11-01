@@ -15,11 +15,6 @@ http:
       service: cloud-service
       entryPoints:
         - web
-    fluxer:
-      rule: "Host(`${FLUXER_DOMAIN}`)"
-      service: fluxer-service
-      entryPoints:
-        - web
   services:
     erp-service:
       loadBalancer:
@@ -33,7 +28,3 @@ http:
       loadBalancer:
         servers:
           - url: "http://nextcloud:80"
-    fluxer-service:
-      loadBalancer:
-        servers:
-          - url: "http://fluxer-edge:8080"

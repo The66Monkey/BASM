@@ -74,9 +74,12 @@ Only Traefik publishes the shared web entry points. Postal, ERPNext, and
 Nextcloud are reached by hostname over the private Compose network, so their
 internal listening ports do not compete for host port 80. Do not start separate
 upstream web proxies publishing the same host port alongside BASM's Traefik.
-Fluxer uses its official self-hosted Compose bundle, runs behind BASM Traefik at
-`chat.<domain>`, and stores generated settings under `<BASM_ROOT>/modules/fluxer/`.
-Its bundled LiveKit voice service needs the selected TCP and UDP ports below.
+Fluxer is available as an opt-in production module. BASM installs it with the
+official `rexctl` manager behind Traefik at `chat.<domain>`; create that DNS A
+record and forward the configured Fluxer voice TCP and UDP media ports. Its web
+edge does not claim BASM's TCP 80/443 ports. The first admin account is created
+interactively during installation. Fluxer is not supported in BASM local mode,
+and is not included in the `--full` profile.
 
 Traefik's static listeners remain on container ports 80/443; only host mappings
 change. In production, HTTP requests are permanently redirected to HTTPS. Production HTTPS URLs include the selected port. Let's Encrypt TLS
@@ -153,11 +156,10 @@ Optional modules: Fluxer, LAMP, and Uptime Kuma are started automatically when s
 (each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
 LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
 WireGuard generates a server config and a `peer1.conf` client config with fresh
-keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer
-generates its setup token and persistent service secrets once, serves through
-Traefik, and stores PostgreSQL dumps and data in the Restic backup set. The
-first Fluxer administrator uses the one-time token in the private user handover.
-Vaultwarden is deprecated and cannot be selected for new installs; use KeePassXC.
+keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer and
+Fluxer is not available in local mode because it requires production HTTPS and
+public voice networking. Vaultwarden is deprecated and cannot be selected for
+new installs; use KeePassXC.
 LAMP uses port 18081 in local mode and Uptime Kuma uses 18301 with the local port
 profile, both bound to the selected local address. `uninstall.sh` stops them and
 `update.sh` updates them together with the core stack. The wizard rejects

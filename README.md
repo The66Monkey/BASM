@@ -12,9 +12,10 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - ERPNext for core business operations
 - Postal for self-hosted mail handling
 - Nextcloud for file sync and collaboration
+- Fluxer for self-hosted community chat and voice/video
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional Fluxer chat, LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules.
+- Optional LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules. Fluxer is separately opt-in; Vaultwarden is deprecated for new installs.
 
 Everything runs as Docker Compose stacks on a single Debian server.
 
