@@ -52,6 +52,9 @@ chosen bind address, domain, or HTTP/TLS mode.
 | LAMP HTTP (TCP) | 8080 | 18081 |
 | Uptime Kuma HTTP (TCP) | 3001 | 18301 |
 | WireGuard ListenPort (UDP) | 51820 | 18520 |
+| RustDesk NAT test (TCP) | 21115 | 22115 |
+| RustDesk ID (TCP/UDP) | 21116 | 22116 |
+| RustDesk relay (TCP) | 21117 | 22117 |
 | Fluxer voice (TCP) | 7881 | 17881 |
 | Fluxer voice (UDP) | 7882 | 17882 |
 
@@ -79,7 +82,7 @@ official `rexctl` manager behind Traefik at `chat.<domain>`; create that DNS A
 record and forward the configured Fluxer voice TCP and UDP media ports. Its web
 edge does not claim BASM's TCP 80/443 ports. The first admin account is created
 interactively during installation. Fluxer is not supported in BASM local mode,
-and is not included in the `--full` profile.
+and is included in the production `--full` profile.
 
 Traefik's static listeners remain on container ports 80/443; only host mappings
 change. In production, HTTP requests are permanently redirected to HTTPS. Production HTTPS URLs include the selected port. Let's Encrypt TLS
@@ -152,7 +155,7 @@ Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps. A local repository is not
 an off-host backup; configure an external copy and test restores.
 
-Optional modules: Fluxer, LAMP, and Uptime Kuma are started automatically when selected
+Optional modules: Fluxer, RustDesk, LAMP, and Uptime Kuma are started automatically when selected
 (each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
 LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
 WireGuard generates a server config and a `peer1.conf` client config with fresh
@@ -164,6 +167,61 @@ LAMP uses port 18081 in local mode and Uptime Kuma uses 18301 with the local por
 profile, both bound to the selected local address. `uninstall.sh` stops them and
 `update.sh` updates them together with the core stack. The wizard rejects
 conflicting port assignments among the selected services.
+
+## RustDesk Server OSS
+
+Select option `8` in the wizard, or add it to an existing deployment:
+
+```bash
+sudo ./install.sh --module rustdesk
+```
+
+BASM runs the official `rustdesk/rustdesk-server:1.1.16` image as two services,
+`hbbs` (ID/rendezvous) and `hbbr` (relay), in the `<prefix>-rustdesk` Compose
+project. RustDesk can be selected individually and is included in `--full`. This is the open-source
+server, not Pro: no web console, API server, or administrator account is created.
+
+Production clients use the primary domain's existing DNS A record. Forward
+TCP 21115, TCP/UDP 21116, and TCP 21117 to the same server ports, or the selected
+custom ports listed in the handover. Do not use a CDN HTTP proxy for this DNS
+record. RustDesk traffic does not pass through Traefik. Configure host filtering
+as well; Docker-published ports can bypass UFW. WebSocket ports 21118/21119 are
+not published, and web clients are not configured.
+
+In each RustDesk desktop client's Network settings, enter:
+
+- **ID server:** `<primary-domain>:21116`
+- **Relay server:** `<primary-domain>:21117`
+- **Key:** contents of `<BASM_ROOT>/modules/rustdesk/data/id_ed25519.pub`
+- **API server:** leave blank
+
+Both services require the server key (`-k _`). This is not a substitute for
+device-level connection approval or a strong unattended-access password.
+The public key is generated at first startup; retrieve it on the server with:
+
+```bash
+sudo cat /opt/basm/modules/rustdesk/data/id_ed25519.pub
+```
+
+Use the actual deployment root if different. Never distribute `id_ed25519`, the
+private key. Test registration and force a relay connection between two devices
+before handing over the service.
+
+Local mode binds only to the selected loopback/private IPv4. Use that IP in
+clients with ID port 22116 and relay port 22117 by default; do not forward router
+ports. Custom values are saved as `RUSTDESK_NAT_PORT`, `RUSTDESK_ID_PORT`, and
+`RUSTDESK_RELAY_PORT`. The NAT port must be exactly one below the ID port.
+
+Keys and the SQLite database persist in `<BASM_ROOT>/modules/rustdesk/data` and
+survive reruns and container recreation. The existing updater pulls the pinned
+image tag; moving to a new server release requires changing the image version
+in the module and regenerating its configuration. Uninstall deletes this data.
+Local-to-production promotion also creates a new identity; update client keys.
+
+BASM's automatic Restic job does not include optional module directories.
+Make a separate encrypted, off-host backup of the entire RustDesk data directory,
+stopping both services first for a consistent SQLite copy. Restore it before
+starting the services to retain the original server identity.
 
 ### Local maintenance
 
@@ -209,8 +267,8 @@ add it to an existing deployment:
 sudo ./install.sh --module keepass
 ```
 
-Enter `local` for the local test deployment. KeePass is an optional extra and is
-not included automatically in the `full` profile.
+Enter `local` for a local test deployment with KeePass selected individually.
+KeePass is also included automatically in the production `full` profile.
 
 This installs KeePassXC and the Debian `python3-pykeepass` library. BASM creates
 `<BASM_ROOT>/config/credentials.kdbx`, a standard encrypted KeePass database, and
@@ -252,8 +310,10 @@ bash tests/keepass.sh
 ## Upgrading from basic to full
 
 A basic install runs BASM Core only (ERPNext, Nextcloud, Postal, Traefik, and
-Restic backups). The full profile adds LAMP, WireGuard, and Uptime Kuma. Fluxer
-is installed separately because it is a larger optional service:
+Restic backups). The full profile includes every supported module: Core, LAMP,
+WireGuard, Uptime Kuma, Fluxer, KeePassXC, and RustDesk Server OSS. Vaultwarden
+is deprecated and unavailable for new installs; backup and Traefik are already
+included in Core. Full requires production mode because Fluxer needs HTTPS:
 
 ```bash
 sudo ./install.sh --full
@@ -268,6 +328,9 @@ The basic install prepares the upgrade without starting optional services:
   YAML. The LAMP directory also contains its initial web page.
 - `<BASM_ROOT>/config/prepared-modules/wireguard/` contains `config.conf` and
   `peer1.conf` with generated keys and the selected endpoint/UDP port, mode `0600`.
+- `<BASM_ROOT>/config/prepared-modules/rustdesk/` contains the ID/relay Compose
+  configuration. Keys are created only when the selected service starts.
+- Fluxer and KeePass are installed only when selected, not during preparation.
 - The summary lists the inactive module ports and configuration locations.
 
 Prepared directories are separate from active modules, so maintenance commands
@@ -279,15 +342,20 @@ server and peer endpoint ports stay synchronized on reruns; it still requires
 manual server setup. Treat prepared WireGuard files as secrets and include the
 deployment configuration in backups.
 
-Enter the domain of the install to upgrade, or `local` for the local test setup.
+Enter the production domain of the install to upgrade. For a local install,
+promote first or add local-compatible modules with `--module <name>`; local
+`--full` is rejected without changing the deployment.
 The upgrade:
 
 - Leaves the running core stack, credentials, and data untouched.
-- Does not run `apt-get` and does not re-pull core images.
+- Installs missing module prerequisites (including KeePassXC and
+  `python3-pykeepass`) without upgrading installed packages or re-pulling core images.
 - Reuses the saved module ports. If they conflict with the current port plan,
   it prompts for new module ports only.
-- Records the new module list in `<BASM_ROOT>/config/basm.env`, starts LAMP and
-  Uptime Kuma, and refreshes the summary.
+- Records the new module list in `<BASM_ROOT>/config/basm.env`, starts LAMP,
+  Uptime Kuma, Fluxer, and RustDesk, creates the KeePass database, and refreshes
+  the summary. Fluxer performs interactive administrator setup; WireGuard
+  still requires manual server setup.
 
 It is safe to rerun. `sudo ./install.sh --module <name>` adds a single module in
 the same way. To add Fluxer, use `sudo ./install.sh --module fluxer` or select it

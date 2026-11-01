@@ -23,6 +23,51 @@ check_debian() { :; }
 export -f docker
 
 (
+  BASM_ROOT="$TEST_DIR/rustdesk-root"
+  DOCKER_LOG="$TEST_DIR/rustdesk-docker.log"
+  BASM_MODULES='basm rustdesk'
+  DEPLOYMENT_MODE=local
+  BIND_ADDRESS=127.0.0.1
+  BASM_CONTAINER_PREFIX=basm-local
+  set_port_defaults local
+  validate_port_plan
+  source "$MODULES_DIR/rustdesk.sh"
+  module_install
+  module_start
+  COMPOSE_FILE="$BASM_ROOT/modules/rustdesk/docker-compose.yml"
+  grep -Fq '"127.0.0.1:22115:21115"' "$COMPOSE_FILE"
+  grep -Fq '"127.0.0.1:22116:21116/udp"' "$COMPOSE_FILE"
+  grep -Fq '"127.0.0.1:22117:21117"' "$COMPOSE_FILE"
+  grep -Fq '"127.0.0.1:22117", "-k", "_"' "$COMPOSE_FILE"
+  [[ "$(stat -c '%a' "$BASM_ROOT/modules/rustdesk/data")" == 700 ]]
+  printf 'preserved-key\n' > "$BASM_ROOT/modules/rustdesk/data/id_ed25519"
+  module_install
+  grep -Fxq preserved-key "$BASM_ROOT/modules/rustdesk/data/id_ed25519"
+  if grep -Eq '21118|21119|network_mode' "$COMPOSE_FILE"; then exit 1; fi
+  grep -Fq "$COMPOSE_FILE up -d" "$DOCKER_LOG"
+  RUSTDESK_RELAY_PORT="$HTTP_PORT"
+  if validate_port_plan; then exit 1; fi
+  set_port_defaults local
+  RUSTDESK_NAT_PORT=22114
+  if validate_port_plan; then exit 1; fi
+  RUSTDESK_NAT_PORT=invalid
+  if validate_port_plan; then exit 1; fi
+  set_port_defaults standard
+  BASM_MODULES='basm rustdesk wireguard'
+  WIREGUARD_PORT="$RUSTDESK_ID_PORT"
+  if validate_port_plan; then exit 1; fi
+  BASM_MODULES=basm
+  select_modules <<< '8'
+  [[ "$BASM_MODULES" == 'basm rustdesk' ]]
+  DEPLOYMENT_MODE=production
+  BIND_ADDRESS=0.0.0.0
+  PRIMARY_DOMAIN=acme.example
+  module_install
+  grep -Fq '"acme.example:21117"' "$COMPOSE_FILE"
+  grep -Fq '"0.0.0.0:21116:21116"' "$COMPOSE_FILE"
+)
+
+(
   BASM_ROOT="$TEST_DIR/fluxer-root"
   FLUXER_TEST_LOG="$TEST_DIR/fluxer-module.log"
   FLUXER_DOMAIN=chat.acme.example
@@ -152,7 +197,7 @@ BASM_CRON_DIR="$TEST_DIR/cron.d"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
-run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n')
+run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\n')
 [[ "$BASM_MODULES" == basm ]]
 configure_system
 install_selected_modules
@@ -225,12 +270,16 @@ prepare_full_profile
 )
 : > "$DOCKER_LOG"
 
-# Basic -> full keeps core untouched and starts the runnable modules.
+# Local full rejects Fluxer before changing the deployment; safe modules remain available.
 : > "$DOCKER_LOG"
 unset HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT WIREGUARD_PORT UPTIME_KUMA_PORT
 select_deployment < <(printf 'local\n')
 load_deployment_env
-upgrade_to_full
+LOCAL_ENV_CHECKSUM="$(sha256sum "$BASM_ENV_FILE")"
+if (upgrade_to_full); then exit 1; fi
+[[ "$(sha256sum "$BASM_ENV_FILE")" == "$LOCAL_ENV_CHECKSUM" ]]
+[[ ! -s "$DOCKER_LOG" ]]
+upgrade_modules $BASM_PREPARED_MODULES
 [[ "$HTTP_PORT" == 19080 && "$HTTPS_PORT" == 19443 && "$SMTP_PORT" == 12525 ]]
 [[ "$LAMP_PORT" == 19081 && "$WIREGUARD_PORT" == 51825 && "$UPTIME_KUMA_PORT" == 19301 ]]
 [[ "$(sha256sum "$LOCAL_BASM_ROOT/docker-compose.yml")" == "$CORE_CHECKSUM" ]]
@@ -238,7 +287,7 @@ upgrade_to_full
 [[ "$(cat "$LOCAL_BASM_ROOT/modules/uptime-kuma/docker-compose.yml")" == "$KUMA_CONFIG" ]]
 [[ "$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")" == "$PREPARED_KEY" ]]
 [[ "$(cat "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf")" == "$PREPARED_PEER" ]]
-grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma"' "$LOCAL_BASM_ROOT/config/basm.env"
+grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$LOCAL_BASM_ROOT/config/basm.env"
 grep -Fqx "DB_ROOT_PASSWORD=\"$LOCAL_DB_PASSWORD\"" "$LOCAL_BASM_ROOT/config/basm.env"
 [[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/config/basm.env")" == 600 ]]
 grep -Fq 'name: basm-local-lamp' "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml"
@@ -258,14 +307,14 @@ grep -Fq 'AUTOMATIC MAINTENANCE' "$USER_HANDOVER"
 grep -Fq '8. AUTOMATIC UPDATES' "$IT_HANDOVER"
 
 # Re-running the upgrade is idempotent.
-upgrade_to_full
-grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma"' "$LOCAL_BASM_ROOT/config/basm.env"
+upgrade_modules $BASM_PREPARED_MODULES
+grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$LOCAL_BASM_ROOT/config/basm.env"
 
 # A blank module selection on a rerun keeps the existing full selection.
 (
   select_deployment < <(printf 'local\n') >/dev/null
   select_modules < <(printf '\n') >/dev/null
-  [[ "$BASM_MODULES" == "basm lamp wireguard uptime-kuma" ]]
+  [[ "$BASM_MODULES" == "basm lamp wireguard uptime-kuma rustdesk" ]]
   select_modules < <(printf 'full\n') >/dev/null
   [[ "$BASM_MODULES" == "$BASM_FULL_MODULES" ]]
 )
@@ -354,7 +403,7 @@ grep -Fqx 'PRIMARY_DOMAIN="acme.example"' "$PROD_ENV"
 grep -Fqx 'ERP_URL="erp.acme.example"' "$PROD_ENV"
 grep -Fqx 'COMPANY_NAME="Acme Ltd"' "$PROD_ENV"
 grep -Fqx 'ADMIN_EMAIL="ops@acme.dk"' "$PROD_ENV"
-grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma"' "$PROD_ENV"
+grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$PROD_ENV"
 grep -Fqx 'PORT_PROFILE="standard"' "$PROD_ENV"
 grep -Fqx 'HTTP_PORT=80' "$PROD_ENV"
 grep -Fqx 'SMTP_PORT=25' "$PROD_ENV"
@@ -398,10 +447,50 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
 )
 
 (
+  upgrade_modules rustdesk
+  grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$PROD_ENV"
+  grep -Fqx 'RUSTDESK_ID_PORT=21116' "$PROD_ENV"
+  grep -Fq 'RustDesk ID server: acme.example:21116' "$OUTPUT_DIR/installation-summary.txt"
+  grep -Fq 'ID server: acme.example:21116' "$USER_HANDOVER"
+  grep -Fq 'RustDesk ID    TCP/UDP     21116' "$IT_HANDOVER"
+  grep -Fq 'Back up '"$BASM_ROOT"'/modules/rustdesk/data separately' "$IT_HANDOVER"
+  load_deployment_env
+  [[ "$RUSTDESK_RELAY_PORT" == 21117 ]]
+  BASM_MODULES+=' keepass'
+  sync_keepass() { printf 'test-master-password\n'; }
+  write_summary
+  grep -Fq 'YOUR KEEPASS ACCESS' "$USER_HANDOVER"
+  grep -Fq 'ID server: acme.example:21116' "$USER_HANDOVER"
+)
+
+(
+  FULL_ACTIONS="$TEST_DIR/full-actions.log"
+  FULL_CORE_CHECKSUM="$(sha256sum "$BASM_ROOT/docker-compose.yml")"
+  load_deployment_env
+  run_module_install() { printf '%s\n' "$1" >> "$FULL_ACTIONS"; }
+  sync_keepass() { printf 'test-master-password\n'; }
+  upgrade_to_full
+  for module_name in $BASM_FULL_MODULES; do module_selected "$module_name"; done
+  [[ "$(sha256sum "$BASM_ROOT/docker-compose.yml")" == "$FULL_CORE_CHECKSUM" ]]
+  [[ "$(wc -l < "$FULL_ACTIONS")" == 6 ]]
+  for module_name in lamp wireguard uptime-kuma fluxer keepass rustdesk; do
+    grep -Fxq "$module_name" "$FULL_ACTIONS"
+  done
+  grep -Fqx "BASM_MODULES=\"$BASM_MODULES\"" "$PROD_ENV"
+  grep -Fq 'YOUR KEEPASS ACCESS' "$USER_HANDOVER"
+  grep -Fq 'ID server: acme.example:21116' "$USER_HANDOVER"
+  select_modules <<< full >/dev/null
+  [[ "$BASM_MODULES" == "$BASM_FULL_MODULES" ]]
+)
+
+(
   UPDATER_DIR="$TEST_DIR/updater"
   mkdir -p "$UPDATER_DIR/modules"
   cp "$ROOT_DIR/update.sh" "$UPDATER_DIR/update.sh"
+  cp "$MODULES_DIR/fluxer.sh" "$UPDATER_DIR/modules/fluxer.sh"
   printf 'source %q\nrequire_root() { :; }\n' "$ROOT_DIR/modules/core.sh" > "$UPDATER_DIR/modules/core.sh"
+  rexctl() { printf 'rexctl %s\n' "$*" >> "$DOCKER_LOG"; }
+  export -f rexctl
   docker() {
     printf '%s\n' "$*" >> "$DOCKER_LOG"
     if [[ "${DOCKER_TEST_FAIL_BACKUP:-false}" == true && "$*" == *'exec -T restic-backup'* ]]; then return 1; fi
@@ -418,6 +507,8 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   grep -Fq 'restic backup --tag basm-pre-update' "$DOCKER_LOG"
   grep -Fq 'up -d --wait --wait-timeout 900' "$DOCKER_LOG"
   grep -Fq 'up -d --wait --wait-timeout 300' "$DOCKER_LOG"
+  grep -Fq "$PRODUCTION_BASM_ROOT/modules/rustdesk/docker-compose.yml pull --quiet" "$DOCKER_LOG"
+  grep -Fq "$PRODUCTION_BASM_ROOT/modules/rustdesk/docker-compose.yml up -d --wait" "$DOCKER_LOG"
   [[ "$(grep -n 'exec -T restic-backup' "$DOCKER_LOG" | cut -d: -f1)" -lt "$(grep -n 'pull --quiet' "$DOCKER_LOG" | head -n 1 | cut -d: -f1)" ]]
   : > "$DOCKER_LOG"
   if DOCKER_TEST_FAIL_BACKUP=true bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/failed-update-output" 2>&1; then exit 1; fi

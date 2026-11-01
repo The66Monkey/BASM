@@ -28,7 +28,7 @@ set_port_defaults local
 [[ "$HTTP_PORT" == 18080 && "$UPTIME_KUMA_PORT" == 18301 && "$WIREGUARD_PORT" == 18520 ]]
 validate_port_plan
 DEPLOYMENT_MODE=local
-configure_ports < <(printf 'custom\n9000\n9443\n2526\n9001\n9301\n51822\n')
+configure_ports < <(printf 'custom\n9000\n9443\n2526\n9001\n9301\n51822\n22115\n22116\n22117\n')
 [[ "$HTTP_PORT" == 9000 && "$HTTPS_PORT" == 9443 && "$SMTP_PORT" == 2526 && "$LAMP_PORT" == 9001 && "$UPTIME_KUMA_PORT" == 9301 && "$WIREGUARD_PORT" == 51822 ]]
 for port in 0 65536 080 abc; do
   if validate_port "$port"; then exit 1; fi
@@ -36,7 +36,7 @@ done
 
 # A base install plans all future module ports and rejects future TCP collisions.
 BASM_MODULES=basm
-configure_ports < <(printf 'custom\n9000\n9443\n2526\n9000\n51822\n9301\ncustom\n9000\n9443\n2526\n9001\n51822\n9301\n')
+configure_ports < <(printf 'custom\n9000\n9443\n2526\n9000\n51822\n9301\n22115\n22116\n22117\ncustom\n9000\n9443\n2526\n9001\n51822\n9301\n22115\n22116\n22117\n')
 [[ "$BASM_MODULES" == basm ]]
 [[ "$LAMP_PORT" == 9001 && "$WIREGUARD_PORT" == 51822 && "$UPTIME_KUMA_PORT" == 9301 ]]
 
@@ -168,7 +168,7 @@ select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
 [[ "$BASM_ROOT" == "$PRODUCTION_BASM_ROOT" ]]
 [[ "$COMPANY_NAME" == 'Production sentinel' ]]
 
-run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\n')
 [[ "$PORT_PROFILE" == custom ]]
 unset HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
 set -a
@@ -215,7 +215,7 @@ grep -Fq 'https://erp.business.example:443' "$OUTPUT_DIR/installation-summary.tx
 grep -Fqx 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 if grep -Eq '^(entryPoints|certificatesResolvers):' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
 port_in_use() { return 1; }
-configure_ports < <(printf 'custom\n19080\n19443\n12525\n19081\n51825\n19301\n')
+configure_ports < <(printf 'custom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\n')
 render_stack
 write_summary
 grep -Fq 'https://erp.business.example:19443' "$OUTPUT_DIR/installation-summary.txt"

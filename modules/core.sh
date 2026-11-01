@@ -40,7 +40,8 @@ ensure_dir() {
   mkdir -p "$1"
 }
 
-BASM_FULL_MODULES="basm lamp wireguard uptime-kuma"
+BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk"
+BASM_PREPARED_MODULES="lamp wireguard uptime-kuma rustdesk"
 BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux"
 
 package_installed() {
@@ -210,6 +211,13 @@ ensure_port_defaults() {
   LAMP_PORT="${LAMP_PORT:-$default_lamp}"
   UPTIME_KUMA_PORT="${UPTIME_KUMA_PORT:-$default_kuma}"
   WIREGUARD_PORT="${WIREGUARD_PORT:-$default_wireguard}"
+  local default_rustdesk_nat=21115 default_rustdesk_id=21116 default_rustdesk_relay=21117
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    default_rustdesk_nat=22115 default_rustdesk_id=22116 default_rustdesk_relay=22117
+  fi
+  RUSTDESK_NAT_PORT="${RUSTDESK_NAT_PORT:-$default_rustdesk_nat}"
+  RUSTDESK_ID_PORT="${RUSTDESK_ID_PORT:-$default_rustdesk_id}"
+  RUSTDESK_RELAY_PORT="${RUSTDESK_RELAY_PORT:-$default_rustdesk_relay}"
   FLUXER_PROXY_PORT="${FLUXER_PROXY_PORT:-$default_fluxer_proxy}"
   FLUXER_VOICE_TCP_PORT="${FLUXER_VOICE_TCP_PORT:-$default_fluxer_voice_tcp}"
   FLUXER_VOICE_UDP_PORT="${FLUXER_VOICE_UDP_PORT:-$default_fluxer_voice_udp}"
@@ -217,7 +225,8 @@ ensure_port_defaults() {
   SMTP_PORT="${SMTP_PORT:-$default_smtp}"
   SSH_PORT="${SSH_PORT:-22}"
   export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_PROXY_PORT \
-    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT
+    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT \
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
 }
 
 set_port_defaults() {
@@ -226,6 +235,9 @@ set_port_defaults() {
   LAMP_PORT=8080
   UPTIME_KUMA_PORT=3001
   WIREGUARD_PORT=51820
+  RUSTDESK_NAT_PORT=21115
+  RUSTDESK_ID_PORT=21116
+  RUSTDESK_RELAY_PORT=21117
   FLUXER_PROXY_PORT=8088
   FLUXER_VOICE_TCP_PORT=17881
   FLUXER_VOICE_UDP_PORT=17882
@@ -236,6 +248,9 @@ set_port_defaults() {
     LAMP_PORT=18081
     UPTIME_KUMA_PORT=18301
     WIREGUARD_PORT=18520
+    RUSTDESK_NAT_PORT=22115
+    RUSTDESK_ID_PORT=22116
+    RUSTDESK_RELAY_PORT=22117
     FLUXER_PROXY_PORT=18088
     FLUXER_VOICE_TCP_PORT=17881
     FLUXER_VOICE_UDP_PORT=17882
@@ -251,6 +266,7 @@ validate_port_plan() {
     case "$module_name" in
       lamp) tcp_ports+=(LAMP_PORT) ;;
       uptime-kuma) tcp_ports+=(UPTIME_KUMA_PORT) ;;
+      rustdesk) tcp_ports+=(RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT) ;;
       fluxer) tcp_ports+=(FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT) ;;
     esac
   done
@@ -264,17 +280,24 @@ validate_port_plan() {
     fi
     assigned[$port]="$variable"
   done
+  if module_selected rustdesk && (( RUSTDESK_NAT_PORT + 1 != RUSTDESK_ID_PORT )); then
+    warn "RUSTDESK_NAT_PORT must be one below RUSTDESK_ID_PORT for RustDesk NAT detection."
+    return 1
+  fi
   validate_port "$WIREGUARD_PORT" || return 1
   if module_selected wireguard; then assigned_udp["$WIREGUARD_PORT"]="WIREGUARD_PORT"; fi
-  if module_selected fluxer; then
-    port="$FLUXER_VOICE_UDP_PORT"
-    validate_port "$port" || { warn "Invalid port for FLUXER_VOICE_UDP_PORT: $port"; return 1; }
+  local -a udp_ports=()
+  module_selected fluxer && udp_ports+=(FLUXER_VOICE_UDP_PORT)
+  module_selected rustdesk && udp_ports+=(RUSTDESK_ID_PORT)
+  for variable in "${udp_ports[@]}"; do
+    port="${!variable}"
+    validate_port "$port" || { warn "Invalid port for $variable: $port"; return 1; }
     if [[ -n "${assigned_udp[$port]:-}" ]]; then
-      warn "FLUXER_VOICE_UDP_PORT conflicts with ${assigned_udp[$port]} on UDP port $port."
+      warn "$variable conflicts with ${assigned_udp[$port]} on UDP port $port."
       return 1
     fi
-    assigned_udp[$port]=FLUXER_VOICE_UDP_PORT
-  fi
+    assigned_udp[$port]="$variable"
+  done
 }
 
 configure_ports() {
@@ -283,11 +306,15 @@ configure_ports() {
   local -a custom_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
   ensure_port_defaults
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then default_profile=local; fi
-  for module_name in ${BASM_MODULES:-basm} $BASM_FULL_MODULES; do
+  for module_name in ${BASM_MODULES:-basm} $BASM_PREPARED_MODULES; do
     case "$module_name" in
       lamp) variable=LAMP_PORT ;;
       uptime-kuma) variable=UPTIME_KUMA_PORT ;;
       wireguard) variable=WIREGUARD_PORT ;;
+      rustdesk)
+        custom_ports+=(RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT)
+        continue
+        ;;
       fluxer)
         for variable in FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT; do
           custom_ports+=("$variable")
@@ -309,7 +336,7 @@ configure_ports() {
         printf -v "$variable" '%s' "$(prompt_value "$variable" "${!variable}" 'validate_port "$1"')"
       done
     fi
-    if (BASM_MODULES="${BASM_MODULES:-basm} $BASM_FULL_MODULES"; validate_port_plan); then break; fi
+    if (BASM_MODULES="${BASM_MODULES:-basm} $BASM_PREPARED_MODULES"; validate_port_plan); then break; fi
     warn "Choose a port profile again to resolve the conflict."
   done
   for variable in "${custom_ports[@]}"; do
@@ -318,9 +345,13 @@ configure_ports() {
     if port_in_use "${!variable}" "$protocol"; then
       warn "$variable (${!variable}/$protocol) is already in use on this host. Stop its current owner or rerun with custom ports."
     fi
+    if [[ "$variable" == RUSTDESK_ID_PORT ]] && port_in_use "${!variable}" udp; then
+      warn "$variable (${!variable}/udp) is already in use on this host."
+    fi
   done
   export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT \
-    FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
+    FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT \
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
 }
 
 validate_local_bind_address() {
@@ -486,7 +517,7 @@ select_deployment() {
 print_module_menu() {
   local index=1 module_name label mark
   printf '\nBASM installation menu\n\n'
-  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma keepass; do
+  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma keepass rustdesk; do
     case "$module_name" in
       basm) label='BASM Core (required)' ;;
       lamp) label='LAMP' ;;
@@ -495,14 +526,16 @@ print_module_menu() {
       vaultwarden) label='Vaultwarden (deprecated; unavailable for new installs)' ;;
       uptime-kuma) label='Uptime Kuma' ;;
       keepass) label='KeePassXC credential manager' ;;
+      rustdesk) label='RustDesk Server OSS' ;;
     esac
     mark=' '
     if [[ "$module_name" == basm ]] || module_selected "$module_name"; then mark='✓'; fi
     printf '%s) [%s] %s\n' "$index" "$mark" "$label"
     index=$((index + 1))
   done
-  printf '\nSelect modules by number (1-7), separated by spaces, or enter "full" for\n'
-  printf 'Core + LAMP + WireGuard + Uptime Kuma. Leave blank to keep the checked modules.\n'
+  printf '\nSelect modules by number (1-8), separated by spaces, or enter "full" for\n'
+  printf 'All supported modules (including Fluxer, KeePassXC, and RustDesk).\n'
+  printf 'Full requires production mode. Leave blank to keep the checked modules.\n'
   printf 'Example: 2 4 6\n'
 }
 
@@ -517,6 +550,7 @@ select_modules() {
     [5]="vaultwarden"
     [6]="uptime-kuma"
     [7]="keepass"
+    [8]="rustdesk"
   )
 
   print_module_menu
@@ -534,7 +568,7 @@ select_modules() {
 
   local choice
   for choice in $input; do
-    if [[ "$choice" =~ ^[1-7]$ ]]; then
+    if [[ "$choice" =~ ^[1-8]$ ]]; then
       if [[ "$choice" == 5 ]]; then
         warn "Vaultwarden is deprecated and unavailable for new installs; select KeePassXC instead."
       elif [[ ! " ${selected[*]} " =~ " ${map[$choice]} " ]]; then
@@ -575,6 +609,9 @@ SSH_PORT=$SSH_PORT
 LAMP_PORT=$LAMP_PORT
 UPTIME_KUMA_PORT=$UPTIME_KUMA_PORT
 WIREGUARD_PORT=$WIREGUARD_PORT
+RUSTDESK_NAT_PORT=$RUSTDESK_NAT_PORT
+RUSTDESK_ID_PORT=$RUSTDESK_ID_PORT
+RUSTDESK_RELAY_PORT=$RUSTDESK_RELAY_PORT
 FLUXER_PROXY_PORT=$FLUXER_PROXY_PORT
 FLUXER_VOICE_TCP_PORT=$FLUXER_VOICE_TCP_PORT
 FLUXER_VOICE_UDP_PORT=$FLUXER_VOICE_UDP_PORT
@@ -749,7 +786,7 @@ configure_system() {
 
 prepare_full_profile() {
   local module_name
-  for module_name in $BASM_FULL_MODULES; do
+  for module_name in $BASM_PREPARED_MODULES; do
     module_selected "$module_name" && continue
     (
       source "$MODULES_DIR/$module_name.sh"
@@ -955,6 +992,7 @@ module_port_variable() {
     lamp) printf '%s' LAMP_PORT ;;
     uptime-kuma) printf '%s' UPTIME_KUMA_PORT ;;
     wireguard) printf '%s' WIREGUARD_PORT ;;
+    rustdesk) printf '%s' RUSTDESK_ID_PORT ;;
     fluxer) printf '%s' FLUXER_PROXY_PORT ;;
   esac
 }
@@ -964,12 +1002,13 @@ module_port_variables() {
     lamp) printf '%s\n' LAMP_PORT ;;
     uptime-kuma) printf '%s\n' UPTIME_KUMA_PORT ;;
     wireguard) printf '%s\n' WIREGUARD_PORT ;;
+    rustdesk) printf '%s\n' RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT ;;
     fluxer) printf '%s\n' FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT ;;
   esac
 }
 
-# Adds optional modules to an existing deployment without touching the core
-# stack, system packages, or credentials. Already-cached images are reused.
+# Adds optional modules without recreating the core stack or its credentials.
+# Module-specific prerequisites are installed as needed; cached images are reused.
 upgrade_modules() {
   local module_name variable protocol
   local -a added=()
@@ -1004,10 +1043,14 @@ upgrade_modules() {
       if port_in_use "${!variable}" "$protocol"; then
         warn "$variable (${!variable}/$protocol) is already in use on this host."
       fi
+      if [[ "$variable" == RUSTDESK_ID_PORT ]] && port_in_use "${!variable}" udp; then
+        warn "$variable (${!variable}/udp) is already in use on this host."
+      fi
     done < <(module_port_variables "$module_name")
   done
   export PORT_PROFILE LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_PROXY_PORT \
-    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
+    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT \
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
 
   write_env_file
   for module_name in "$@"; do
@@ -1021,6 +1064,9 @@ upgrade_modules() {
 }
 
 upgrade_to_full() {
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    fail "The full profile includes Fluxer, which requires production HTTPS. Promote to production first, or add local-compatible modules individually."
+  fi
   log "Upgrading $BASM_ROOT to the full BASM profile"
   # shellcheck disable=SC2086
   upgrade_modules $BASM_FULL_MODULES
@@ -1120,6 +1166,7 @@ promote_to_production() {
 
   for variable in DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE HTTP_PORT HTTPS_PORT \
     LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT \
     BACKUP_LOCATION PRIMARY_DOMAIN DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD \
     NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET \
     POSTAL_WEB_PROTOCOL RESTIC_PASSWORD; do
@@ -1163,6 +1210,10 @@ port_summary() {
       lamp) printf 'LAMP: http://%s:%s\n' "$host" "$LAMP_PORT" ;;
       uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
+      rustdesk)
+        printf 'RustDesk ID server: %s:%s (TCP/UDP); NAT test: %s/tcp\n' "$host" "$RUSTDESK_ID_PORT" "$RUSTDESK_NAT_PORT"
+        printf 'RustDesk relay server: %s:%s (TCP)\nPublic key file: %s/modules/rustdesk/data/id_ed25519.pub\n' "$host" "$RUSTDESK_RELAY_PORT" "$BASM_ROOT"
+        ;;
       fluxer)
         printf 'Fluxer: https://%s:%s (proxy listener %s/tcp)\n' "$FLUXER_DOMAIN" "$HTTPS_PORT" "$FLUXER_PROXY_PORT"
         if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
@@ -1171,7 +1222,7 @@ port_summary() {
         ;;
     esac
   done
-  for module_name in $BASM_FULL_MODULES; do
+  for module_name in $BASM_PREPARED_MODULES; do
     module_selected "$module_name" && continue
     variable="$(module_port_variable "$module_name")"
     [[ -n "$variable" ]] || continue
@@ -1451,6 +1502,23 @@ Have IT record its login details securely; BASM does not store them here.
 EOF
   fi
 
+  if module_selected rustdesk; then
+    local rustdesk_host="$PRIMARY_DOMAIN"
+    if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then rustdesk_host="$BIND_ADDRESS"; fi
+    cat >> "$handover_dir/for-the-user.txt" <<EOF
+
+Remote desktop (RustDesk Server OSS)
+In each RustDesk client's Network settings, set:
+ID server: $rustdesk_host:$RUSTDESK_ID_PORT
+Relay server: $rustdesk_host:$RUSTDESK_RELAY_PORT
+Key: contents of $BASM_ROOT/modules/rustdesk/data/id_ed25519.pub
+The key is generated at first server start. Ask IT to provide it securely.
+Leave API server blank; no web console or administrator account is installed.
+Clients must use the server key. Remote access still requires approval or a
+strong unattended-access password on each client device.
+EOF
+  fi
+
   cat > "$handover_dir/for-it.txt" <<EOF
 For IT
 ======
@@ -1543,6 +1611,7 @@ HTTP           TCP         $HTTP_PORT               $HTTP_PORT
 HTTPS          TCP         $HTTPS_PORT              $HTTPS_PORT
 Postal SMTP    TCP         25               $SMTP_PORT
 $(if module_selected fluxer; then printf 'Fluxer media   TCP         %s               %s\nFluxer media   UDP         %s               %s\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
+$(if module_selected rustdesk; then printf 'RustDesk NAT   TCP         %s               %s\nRustDesk ID    TCP/UDP     %s               %s\nRustDesk relay TCP         %s               %s\n' "$RUSTDESK_NAT_PORT" "$RUSTDESK_NAT_PORT" "$RUSTDESK_ID_PORT" "$RUSTDESK_ID_PORT" "$RUSTDESK_RELAY_PORT" "$RUSTDESK_RELAY_PORT"; fi)
 If HTTP uses a custom port, ALSO forward external TCP 80 to internal $HTTP_PORT.
 If HTTPS uses a custom port, ALSO forward external TCP 443 to internal $HTTPS_PORT.
 These additional rules allow normal browser access, HTTPS redirects, and
@@ -1569,6 +1638,21 @@ Configure application SMTP credentials in Postal; BASM does not generate them.
 Postal is a mail delivery platform, not an IMAP/POP mailbox or webmail service.
 Test sending AND receiving with an unrelated external mail provider. Do not
 promise working mail until DNS, provider restrictions and delivery are checked.
+EOF
+  fi
+  if module_selected rustdesk; then
+    cat >> "$handover_dir/for-it.txt" <<EOF
+
+RUSTDESK CLIENT SETUP AND RECOVERY
+Configure clients using the ID/relay endpoints in the user document and the
+contents of $BASM_ROOT/modules/rustdesk/data/id_ed25519.pub (after first start).
+Keep WebSocket ports 21118/21119 closed; this setup supports desktop clients.
+Test registration and a forced-relay session between two client devices.
+Back up $BASM_ROOT/modules/rustdesk/data separately, with the services stopped
+for a consistent database copy. BASM's automatic Restic job does not include
+optional module directories. Protect id_ed25519 (private key); never share it.
+Reruns preserve this directory; uninstall and local-to-production promotion
+delete it. Promotion generates a new key, so reconfigure clients afterwards.
 EOF
   fi
   cat >> "$handover_dir/for-it.txt" <<EOF
@@ -1676,7 +1760,8 @@ SSH settings and the host firewall are not changed by local mode.
 Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port $SMTP_PORT; public mail delivery requires a production domain and DNS records.
 Restic encrypts daily backups to $BACKUP_LOCATION/restic.
 LAMP and Uptime Kuma start automatically when selected; WireGuard generates configuration only.
-Upgrade to the full profile: sudo ./install.sh --full (choose local)
+Add local-compatible modules: sudo ./install.sh --module <name> (choose local)
+The full profile requires production mode because it includes Fluxer.
 Promote to production: sudo ./install.sh --promote
 Backup Location: $BACKUP_LOCATION
 EOF

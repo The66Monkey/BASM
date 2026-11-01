@@ -83,9 +83,10 @@ changes are logged to `<BASM_ROOT>/logs/ddns.log`.
 
 ## Modules
 
-LAMP, Uptime Kuma, and WireGuard are opt-in and make up the full profile; LAMP
-and Uptime Kuma start automatically when selected. Fluxer is separately
-opt-in and managed by Fluxer's `rexctl` behind BASM Traefik, with direct voice
+The full production profile includes Core, LAMP, Uptime Kuma, WireGuard, Fluxer,
+KeePassXC, and RustDesk Server OSS. Each optional module can also be selected
+individually. LAMP, Uptime Kuma, and RustDesk start automatically when selected.
+Fluxer requires production HTTPS and is managed by `rexctl` behind BASM Traefik, with direct voice
 media ports and BASM-integrated backups. Vaultwarden is deprecated for new
 installs; KeePassXC is the supported credential-manager module. The installer
 and maintenance scripts are executable directly from the checkout.

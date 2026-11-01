@@ -75,13 +75,16 @@ not create the pre-update snapshot.
 
 ## Upgrading and promoting
 
-- `sudo ./install.sh --full` adds LAMP, WireGuard, and Uptime Kuma to an
-  existing install without touching core services, data, or credentials.
+- `sudo ./install.sh --full` adds every supported module (LAMP, WireGuard,
+  Uptime Kuma, Fluxer, KeePassXC, and RustDesk) to an existing production install
+  without recreating core services, data, or credentials. Local mode requires
+  individual module selection or promotion first because Fluxer needs HTTPS.
 - `sudo ./install.sh --module fluxer` adds the optional Fluxer chat stack behind
   BASM Traefik, including its persistent data, database dumps, and update path.
 - `sudo ./install.sh --promote` replaces a local test install with a fresh
   production install, carrying over organization settings and module selection.
 
-Neither path upgrades system packages or re-downloads cached Docker images. See
+These paths install missing module prerequisites but do not upgrade installed
+system packages; cached Docker images are reused. See
 [installation.md](./installation.md#upgrading-from-basic-to-full) and
 [promoting](./installation.md#promoting-a-local-test-install-to-production).

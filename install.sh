@@ -20,13 +20,14 @@ Usage: ./install.sh [--module <module-name> | --full | --promote] [--help]
   (no option)         Run the setup wizard (new install or reconfigure)
   --module <name>     Add one module to an existing install
   --full              Upgrade an existing basic install to the full profile
-                      (Core + LAMP + WireGuard + Uptime Kuma); core is untouched
+                      (all supported modules); requires production mode
   --promote           Replace the local test install with a fresh production
                       install, reusing installed packages and cached images
 
 Examples:
   ./install.sh
   ./install.sh --module wireguard
+  ./install.sh --module rustdesk
   ./install.sh --full
   ./install.sh --promote
 EOF

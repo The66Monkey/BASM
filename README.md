@@ -15,7 +15,7 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - Fluxer for self-hosted community chat and voice/video
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional LAMP, WireGuard, Uptime Kuma, and KeePassXC credential manager modules. Fluxer is separately opt-in; Vaultwarden is deprecated for new installs.
+- Optional LAMP, WireGuard, Uptime Kuma, RustDesk Server OSS, and KeePassXC credential manager modules. The full profile includes every supported module, including Fluxer; Vaultwarden is deprecated for new installs.
 
 Everything runs as Docker Compose stacks on a single Debian server.
 
@@ -42,6 +42,11 @@ To try BASM without DNS or a router, enter `local` as the domain. See
 [local and LAN testing](docs/installation.md#local-and-lan-testing).
 
 To uninstall BASM completely, run: `sudo ./uninstall.sh`
+
+To add a self-hosted RustDesk ID and relay server, select option `8` in the
+wizard or run `sudo ./install.sh --module rustdesk` on an existing install.
+See [RustDesk setup](docs/installation.md#rustdesk-server-oss) for client settings,
+ports, and key backups. RustDesk is also included in the production `--full` profile.
 
 ## Where is configuration stored?
 
