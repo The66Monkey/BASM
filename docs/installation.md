@@ -74,6 +74,12 @@ The installer does the following:
 - Adds a compact interactive login banner with the host name, IPv4 address, and
   BASM container status
 
+The banner runs as the login user without elevating privileges. If that user
+cannot query Docker, it directs them to `sudo basm status`; this does not mean
+the Docker daemon is stopped. Do not add users to the root-equivalent Docker
+group just to display a container count. The count is not a health check:
+use `sudo basm check` for application and backup validation.
+
 Production LAMP and Uptime Kuma bind to loopback by default. Use SSH tunnels or
 set `MANAGEMENT_BIND_ADDRESS` to a private LAN IPv4 before regenerating those
 modules. Their unencrypted administration ports must not be forwarded publicly.

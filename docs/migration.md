@@ -43,6 +43,10 @@ This deployment-specific checkpoint is not a supported installer profile:
   counts and the RustDesk public-key checksum match the source.
 - ERPNext worker/scheduler and Postal SMTP/worker remain stopped pending
   cutover. The imported ERP site's scheduler is also disabled.
+  BASM's health check correctly fails while these required services are stopped;
+  do not suppress that failure or retire Mint before completing cutover.
+  Successful one-shot configurator/initialization containers may remain exited
+  with code 0; they are not long-running services.
 - Compatibility stacks are under `/opt/basm/modules/migrated-network` and
   `/opt/basm/modules/migrated-heartbeat`. These are manually managed additions,
   not new built-in BASM modules.

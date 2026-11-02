@@ -22,6 +22,32 @@ install_login_banner
 cmp "$ROOT_DIR/templates/profile.d/basm.sh" "$BASM_PROFILE_DIR/basm.sh"
 [[ "$(stat -c '%a' "$BASM_PROFILE_DIR/basm.sh")" == 644 ]]
 
+for banner_mode in running empty denied missing; do
+  banner_output="$(BANNER_MODE="$banner_mode" bash --noprofile --norc -ic '
+    docker() {
+      case "$BANNER_MODE" in
+        running) printf "basm-one\nbasm-two\n" ;;
+        empty) return 0 ;;
+        denied) printf "permission denied\n" >&2; return 1 ;;
+      esac
+    }
+    command() {
+      if [[ "$BANNER_MODE" == missing && "$*" == "-v docker" ]]; then
+        return 1
+      fi
+      builtin command "$@"
+    }
+    source "$1"
+  ' bash "$BASM_PROFILE_DIR/basm.sh" 2>/dev/null)"
+  case "$banner_mode" in
+    running) grep -Fq 'Stack: 2 running container(s)' <<< "$banner_output" ;;
+    empty) grep -Fq 'Stack: 0 running container(s)' <<< "$banner_output" ;;
+    denied) grep -Fq 'Stack: Status unavailable to this login; check with sudo' <<< "$banner_output" ;;
+    missing) grep -Fq 'Stack: Docker command not installed' <<< "$banner_output" ;;
+  esac
+done
+[[ -z "$(bash --noprofile --norc -c 'source "$1"' bash "$BASM_PROFILE_DIR/basm.sh")" ]]
+
 previous_password=""
 for attempt in {1..10}; do
   password="$(generate_password)"
