@@ -38,13 +38,14 @@ This deployment-specific checkpoint is not a supported installer profile:
   6 GiB RAM and a 40 GiB disk; configured to autostart. Reserve its DHCP address.
 - Selected modules: core, LAMP, Uptime Kuma, KeePassXC and RustDesk. BASM Fluxer
   and BASM's standard WireGuard module are not selected.
-- Mint source: `192.168.50.52` (also `.50`), still available; ERPNext, Postal
+- Mint source: `192.168.50.52` (also `.50`), powered down after cutover; ERPNext, Postal
   and RustDesk were imported. Selected ERP data counts, Postal account/domain
   counts and the RustDesk public-key checksum match the source.
-- ERPNext worker/scheduler and Postal SMTP/worker remain stopped pending
-  cutover. The imported ERP site's scheduler is also disabled.
-  BASM's health check correctly fails while these required services are stopped;
-  do not suppress that failure or retire Mint before completing cutover.
+- Mint's ERPNext, Postal and RustDesk services were stopped before their BASM
+  replacements were enabled. BASM's ERPNext worker/scheduler and Postal
+  SMTP/worker are running; the imported ERP site's scheduler is enabled.
+  ERP background jobs completed, and `sudo basm check` passes after backup
+  stop/restart. The earlier failed-health marker has cleared.
   Successful one-shot configurator/initialization containers may remain exited
   with code 0; they are not long-running services.
 - Compatibility stacks are under `/opt/basm/modules/migrated-network` and
@@ -67,8 +68,17 @@ This deployment-specific checkpoint is not a supported installer profile:
   passed ACME staging validation using a separate resolver/storage file, then
   production issuance. Trusted HTTPS now returns ERP 200 and Postal/Cloud 302;
   the owner confirmed ERP settings and old Postal logs are retained after login.
-  Nextcloud login/file tests and external-client tests remain pending. DEN public
+  Nextcloud authenticated HTTPS WebDAV upload/download/content comparison/delete
+  passed. Browser workflow and external-client tests remain pending. DEN public
   Fluxer HTTPS is temporarily unavailable under the BASM-first forwarding plan.
+- Postal's active configuration already uses `mx`, `rp`, `routes`, `spf` and
+  `track` hostnames; the import preserved signing/Rails secrets, not the old
+  hostname layout. The root SPF's legacy `include:mail...` was corrected to
+  `include:spf...`, preserving other TXT records. Postal's refreshed SPF, DKIM,
+  MX and return-path checks all report OK. One authenticated SMTP test was
+  accepted by Proton, arrived in the owner's inbox and passed received
+  SPF/DKIM/DMARC checks. Its queue drained. Unauthenticated external relaying
+  was rejected. Keep the existing DKIM key/selector during this migration.
 - The guest OS still reports `Etc/UTC`. The wizard's application timezone does
   not set the OS timezone; verify it separately because maintenance uses the
   server clock.
@@ -77,8 +87,16 @@ Source migration bundles are under `/backup/basm-migration-20261102.*` on Mint,
 with a verified copy under `/var/backups/mint-migration-20261102` in the VM.
 These contain secrets and must stay access-restricted. They are outside
 `/opt/basm`, so BASM's normal deployment snapshot does not include them.
-Restic snapshots before and after the main application import passed full
-verification; the heartbeat stack was added afterwards and needs a new backup.
+The final quiesced Mint recovery bundle is
+`/backup/basm-final-cutover-20261102.WYsj8x` on the source, with a checksum-verified
+copy at `/var/backups/mint-final-cutover-20261102` on BASM. It includes a fresh
+ERPNext database/file backup, Postal dump and protected host configuration.
+It is a final rollback capture, not a second import over the working BASM data.
+The Mint ERP site was put into maintenance mode for that capture.
+
+Restic snapshots before/after import and after cutover passed full verification.
+Post-cutover snapshot `d504e7cf` includes the compatibility stacks and private
+vault configuration; all 27 repository packs were read successfully.
 The repository is still on the VM's system disk, not independent backup storage.
 Full replacement-host `recover.sh` validation remains pending.
 
@@ -95,8 +113,14 @@ sudo docker compose -f /opt/basm/modules/migrated-network/docker-compose.yml ps
 sudo docker compose -f /opt/basm/modules/migrated-heartbeat/docker-compose.yml ps
 ```
 
-Before retiring Mint: resume and test held services, verify
-real clients, take a fresh backup plus an independent copy and test recovery.
+Mint is now cold rollback, not a parallel production server. Do not start its
+old application containers alongside BASM. To roll back, first stop the
+replacement writers and reconcile any data created after cutover; a power-on
+alone does not reverse database or DNS changes. The old ERP site's maintenance
+mode also needs explicit review before serving users again.
+
+Before wiping Mint: verify real VPN/RustDesk/kiosk clients, browser workflows,
+an independent encrypted backup copy and replacement-host recovery.
 Retain source disks without wiping them. Remove the temporary
 `/etc/sudoers.d/99-copilot-session` grant on both original hosts when maintenance
 access is no longer needed.
@@ -130,9 +154,9 @@ Retrieve passwords privately from the handover, not logs or shared screenshots.
    Neither administration port should be forwarded publicly.
 5. **RustDesk:** test an actual remote connection using the preserved public
    key and configured ID/relay server. A listening port is not a relay test.
-6. **KeePass:** securely retrieve the KDBX and master password using the
-   [KeePass instructions](installation.md#optional-keepass-credential-manager),
-   then open it locally. Verify imported-account credentials manually: the
+6. **KeePass:** open the canonical admin KDBX through the
+   [private share](keepass-sharing.md), retrieving its master password separately.
+   Test save/close/reopen. Verify imported-account credentials manually: the
    generated vault may still describe fresh-install accounts.
 7. **VPN and heartbeat:** test from an external network, not just LAN. Confirm
    a VPN handshake and private service access. Confirm a fresh heartbeat file
