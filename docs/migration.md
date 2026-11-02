@@ -98,6 +98,16 @@ This deployment-specific checkpoint is not a supported installer profile:
 - The guest OS still reports `Etc/UTC`. The wizard's application timezone does
   not set the OS timezone; verify it separately because maintenance uses the
   server clock.
+- AdGuard now has exact private DNS rewrites for DEN web names to `.245` and
+  BASM's ERP/mail/cloud to `.20`, forwarding other names to the router's existing
+  CleanBrowsing resolvers (`185.228.168.9`, `185.228.169.9`). The new public
+  `vpn.scandinavianhacking.dedyn.io` is not rewritten. DEN saved profiles and new
+  profile generation use it; client profiles need hostname-only edits, retaining
+  ports and keys. The owner confirmed a mobile reconnect with the new hostname.
+  Existing legacy `.20:51820` saved profiles use the public IP and remain valid.
+  LAN DHCP must advertise `.20` for these rules to reach LAN devices; ASUS router
+  DNS still returned public app addresses at verification. A browser working
+  after VPN disconnect can reflect cached private DNS, not a finished DHCP fix.
 
 Source migration bundles are under `/backup/basm-migration-20261102.*` on Mint,
 with a verified copy under `/var/backups/mint-migration-20261102` in the VM.

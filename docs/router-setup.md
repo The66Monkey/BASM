@@ -104,7 +104,7 @@ changes, so coordinate mail DNS with the migration.
 ### Sharing a domain with DEN
 
 BASM's non-static updater manages A records for the root, ERP, mail, cloud and
-`mx`, plus Fluxer only when selected. DEN manages `home`, `media`, `photos`,
+`mx`, plus Fluxer only when selected. DEN manages `vpn`, `home`, `media`, `photos`,
 `files`, `git`, and its enabled `chat`/`downloads` records. Separate ownership
 lets both update the same zone; avoid configuring both to manage the same name.
 Use separate API tokens with record-scoped permissions where possible.
