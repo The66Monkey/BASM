@@ -13,6 +13,7 @@ your configured root, or `/opt/basm-local` for local mode.
 | Backup now | `sudo basm backup` |
 | Verify backup contents | `sudo basm verify-backup` |
 | Recovery | [Backup and recovery](backup.md) |
+| Admin, team and personal password vaults | [KeePass sharing](keepass-sharing.md) |
 | Import an old server or test a migration | [Migration and acceptance](migration.md) |
 | DNS, certificates and forwarding | [Network setup](router-setup.md), [troubleshooting](troubleshooting.md) |
 

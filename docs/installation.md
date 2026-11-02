@@ -311,12 +311,14 @@ Enter `local` for a local test deployment with KeePass selected individually.
 KeePass is also included automatically in the production `full` profile.
 
 This installs KeePassXC and the Debian `python3-pykeepass` library. BASM creates
-`<BASM_ROOT>/config/credentials.kdbx`, a standard encrypted KeePass database, and
+`<BASM_ROOT>/vaults/admin/credentials.kdbx`, a standard encrypted KeePass database, and
 stores its generated master password in
 `<BASM_ROOT>/config/keepass-master-password`. Both files have mode `0600`.
 KeePassXC is a desktop application, not a browser interface or network service.
 On a headless server, open a securely delivered database copy with a
 KeePass-compatible application on the owner's computer.
+For a canonical server file rather than independent editable downloads, see
+[private shared-vault access](keepass-sharing.md).
 
 When selected, the **For the User** document contains the database location and
 one master password instead of individual service credentials. The summary and
@@ -334,6 +336,14 @@ Rerunning the installer adds missing entries without overwriting existing
 entries or changing the master password. Update KeePass entries when changing
 passwords in applications. If changing the database master password, also update
 the protected saved master-password file before rerunning the installer.
+Close KeePassXC before installer or handover regeneration. Synchronization
+refuses a present KeePassXC lock file or a detected concurrent file change;
+this is not distributed locking across all clients.
+Older `config/credentials.kdbx` files are migrated into `vaults/admin/`, retaining
+a protected `config/credentials.kdbx.pre-share` rollback copy. If both locations
+already contain a database, synchronization stops for administrator review.
+An existing rollback copy is never overwritten; reconcile it manually before
+retrying a migration.
 Keep an independent recovery copy of the database and master password: a Restic
 backup alone cannot recover the password needed to decrypt itself.
 

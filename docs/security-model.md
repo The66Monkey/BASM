@@ -24,14 +24,16 @@
 credentials and must be delivered securely to the owner and IT helper.
 
 With the optional KeePass module, service credentials and generated private keys
-are placed in `<BASM_ROOT>/config/credentials.kdbx` instead of the user document.
+are placed in `<BASM_ROOT>/vaults/admin/credentials.kdbx` instead of the user document.
 The user document contains only the database access details and master password;
 the IT document and summary do not contain the master password. KeePassXC is
 installed for opening the database, and compatible clients can open a delivered
-copy. Accounts created manually must be recorded by IT.
+copy. For a canonical server file, use a
+[private admin-only share](keepass-sharing.md); employee and personal vaults
+must remain separate. Accounts created manually must be recorded by IT.
 
 The database and `<BASM_ROOT>/config/keepass-master-password` are mode `0600` and
-are included in configuration backups. Runtime secrets remain in the root-only
+are included in deployment backups. Runtime secrets remain in the root-only
 environment file. Preserve an independent database and master-password copy for
 recovery; the Restic password is inside the database. Existing vault entries are
 preserved when regenerating handovers.

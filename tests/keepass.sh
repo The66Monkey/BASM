@@ -27,7 +27,7 @@ write_summary
 USER_HANDOVER="$BASM_ROOT/handover/for-the-user.txt"
 IT_HANDOVER="$BASM_ROOT/handover/for-it.txt"
 MASTER_FILE="$BASM_ROOT/config/keepass-master-password"
-DATABASE="$BASM_ROOT/config/credentials.kdbx"
+DATABASE="$BASM_ROOT/vaults/admin/credentials.kdbx"
 master="$(< "$MASTER_FILE")"
 [[ "$master" =~ ^[A-Za-z0-9]{32}$ ]]
 [[ "$(stat -c '%a' "$DATABASE")" == 600 ]]
@@ -50,7 +50,7 @@ import sys
 from pykeepass import PyKeePass
 
 root = Path(sys.argv[1])
-database = root / "config/credentials.kdbx"
+database = root / "vaults/admin/credentials.kdbx"
 master = (root / "config/keepass-master-password").read_text().strip()
 vault = PyKeePass(database, password=master)
 group = vault.find_groups(name="BASM", first=True)
@@ -86,11 +86,36 @@ from pykeepass import PyKeePass
 
 root = Path(sys.argv[1])
 master = (root / "config/keepass-master-password").read_text().strip()
-vault = PyKeePass(root / "config/credentials.kdbx", password=master)
+vault = PyKeePass(root / "vaults/admin/credentials.kdbx", password=master)
 assert vault.find_entries(title="Nextcloud administrator", first=True).password == "OwnerChangedPassword"
 assert len(vault.find_entries(title="ERPNext administrator")) == 1
 assert vault.find_entries(title="Uptime Kuma administrator", first=True).url == "http://127.0.0.1:18301"
 PY
+checksum="$(sha256sum "$DATABASE")"
+touch "$DATABASE.lock"
+if sync_keepass >/dev/null 2>&1; then exit 1; fi
+[[ "$(sha256sum "$DATABASE")" == "$checksum" ]]
+rm "$DATABASE.lock"
+mv "$DATABASE" "$BASM_ROOT/config/credentials.kdbx"
+sync_keepass >/dev/null
+[[ -f "$DATABASE" && ! -e "$BASM_ROOT/config/credentials.kdbx" ]]
+[[ -f "$BASM_ROOT/config/credentials.kdbx.pre-share" ]]
+cp "$DATABASE" "$BASM_ROOT/config/credentials.kdbx"
+checksum="$(sha256sum "$DATABASE")"
+if sync_keepass >/dev/null 2>&1; then exit 1; fi
+[[ "$(sha256sum "$DATABASE")" == "$checksum" ]]
+rm "$BASM_ROOT/config/credentials.kdbx"
+mv "$DATABASE" "$BASM_ROOT/config/credentials.kdbx"
+backup_checksum="$(sha256sum "$BASM_ROOT/config/credentials.kdbx.pre-share")"
+if sync_keepass >/dev/null 2>&1; then exit 1; fi
+[[ ! -e "$DATABASE" ]]
+[[ "$(sha256sum "$BASM_ROOT/config/credentials.kdbx.pre-share")" == "$backup_checksum" ]]
+mv "$BASM_ROOT/config/credentials.kdbx" "$DATABASE"
+if [[ "$EUID" == 0 ]]; then
+  chown 65534:65534 "$DATABASE"
+  sync_keepass >/dev/null
+  [[ "$(stat -c '%u:%g' "$DATABASE")" == 65534:65534 ]]
+fi
 checksum="$(sha256sum "$DATABASE")"
 mv "$MASTER_FILE" "$MASTER_FILE.saved"
 if sync_keepass >/dev/null 2>&1; then exit 1; fi

@@ -1398,9 +1398,12 @@ PRIVATE: This document contains the master password for your credential database
 YOUR KEEPASS ACCESS
 Open this database with KeePassXC (installed on the server), or another
 KeePass-compatible application on your computer:
-Database: $BASM_ROOT/config/credentials.kdbx
+Database: $BASM_ROOT/vaults/admin/credentials.kdbx
 Master password: $keepass_master_password
-No username is required. Ask IT to deliver the database file and this document.
+No database username is required. This admin vault is for the owner/IT only.
+If IT configured a private share, open the canonical database directly there;
+do not download another editable working copy. Otherwise ask IT for secure access.
+Use separate shared and personal vaults for employees; never share this admin vault.
 
 The BASM group contains the service addresses, administrator logins, database
 credentials, backup encryption password, and generated private keys.
@@ -1575,7 +1578,8 @@ Record your support contact details. Create named employee accounts and enable
 two-factor authentication where available. Record changed passwords separately;
 these documents contain initial values, not live passwords from applications.
 $(if module_selected keepass; then printf '%s\n' \
-  'KeePass is enabled: all service credentials are in config/credentials.kdbx.' \
+  'KeePass is enabled: all service credentials are in vaults/admin/credentials.kdbx.' \
+  'Restrict this admin vault to owner/IT. Use separate shared and personal employee vaults.' \
   'Record Fluxer administrator credentials in KeePass after interactive setup.' \
   'Record account changes' \
   'and manually created logins in KeePass. Deliver an independent recovery copy' \
@@ -1758,7 +1762,7 @@ EOF
 
 credential_summary() {
   if module_selected keepass; then
-    printf '%s\n' "- Service credentials: $BASM_ROOT/config/credentials.kdbx" \
+    printf '%s\n' "- Service credentials: $BASM_ROOT/vaults/admin/credentials.kdbx" \
       "- KeePass access: $BASM_ROOT/handover/for-the-user.txt (private)"
   else
     printf '%s\n' '- ERPNext user: Administrator' "- Nextcloud user: $NEXTCLOUD_ADMIN_USER" \
