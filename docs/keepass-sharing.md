@@ -12,14 +12,16 @@ Use different master passwords. Everyone who can decrypt a shared KDBX can read
 all its entries and retain a copy. KeePass does not provide per-entry employee
 permissions, central auditing or revocation of previously copied secrets.
 
-## Admin share: current home-lab deployment
+## Example manual admin share
 
-The canonical database is `/opt/basm/vaults/admin/credentials.kdbx` on the BASM
-VM (`192.168.50.20`). The private Samba share is `BASM-Admin`; its dedicated
-login is `basm-vault`. This is a manually configured deployment addition, not
+The canonical database is `/opt/basm/vaults/admin/credentials.kdbx`.
+The following example assumes an administrator has configured a private Samba
+share named `BASM-Admin` with a dedicated login named `basm-vault`.
+Replace `SERVER_LAN_IP` with the server's private address.
+This is a manual integration, not
 an automatically provisioned BASM module.
 
-On the VM, retrieve the share password privately:
+Store and retrieve the share password privately, for example on the server:
 
 ```sh
 sudo cat /opt/basm/config/admin-vault-smb-password
@@ -36,8 +38,8 @@ sudo less /opt/basm/handover/for-the-user.txt
 
 1. Install KeePassXC on the workstation.
 2. On the LAN or VPN, open your file manager's **Connect to Server** feature:
-   `smb://192.168.50.20/BASM-Admin`. On Windows use
-   `\\192.168.50.20\BASM-Admin`.
+   `smb://SERVER_LAN_IP/BASM-Admin`. On Windows use
+   `\\SERVER_LAN_IP\BASM-Admin`.
 3. Log in as `basm-vault` using the share password.
 4. Open `credentials.kdbx` from that share in KeePassXC, using the vault master
    password. If KeePassXC cannot open your file manager's virtual SMB location,
@@ -45,9 +47,6 @@ sudo less /opt/basm/handover/for-the-user.txt
    Do not solve this by downloading another editable copy.
 5. Add a harmless test entry, save, close, reopen from the share and confirm it
    persisted. Then remove the test entry. Verify this before relying on sharing.
-
-The owner confirmed workstation access works in the current deployment.
-This does not replace recovery or concurrent-edit testing.
 
 Retire the earlier downloaded copy from everyday use after reconciling any
 edits; do not overwrite the canonical server file with an older download.
@@ -60,7 +59,7 @@ is a canonical-file workflow, not a guarantee of server-only data.
 ### Access boundaries and maintenance
 
 - SMB3 encryption/signing and an authenticated, non-guest login are required.
-- TCP 445 is bound to the VM's LAN interface, with LAN/VPN source restrictions.
+- Bind TCP 445 to the server's LAN interface, with LAN/VPN source restrictions.
   Never forward it publicly. NetBIOS discovery is disabled.
 - Only the dedicated vault directory is shared. The saved master password,
   runtime environment, handovers and other BASM config are outside it.
@@ -79,14 +78,14 @@ The KDBX is inside BASM's backup tree. The share's host configuration is not:
 protect a recovery copy of `/etc/samba/smb.conf`, Samba's account state and
 the POSIX access setup separately. Replacement-host recovery must recreate the
 dedicated user, its Samba login and traversal ACLs before reopening the share.
-This deployment stores a protected export in `config/admin-share-recovery/`
+For example, store a protected export in `config/admin-share-recovery/`
 (configuration, account identifiers, Samba password hash and ACLs) so subsequent
 BASM snapshots include it. Refresh that export after changing share accounts or
 permissions; it is not maintained automatically. Treat the export as a secret.
 Keep an independent copy of the KDBX master password; don't store the sole
 Restic decryption key inside the repository encrypted by that key.
 
-## Team vault (planned, not provisioned)
+## Separate team vault
 
 Create a separate empty KDBX containing only shared employee credentials, with
 its own master password. Use a separate restricted share and individual SMB
