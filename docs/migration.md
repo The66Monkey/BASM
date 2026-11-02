@@ -53,14 +53,19 @@ This deployment-specific checkpoint is not a supported installer profile:
   not new built-in BASM modules.
 - Migrated AdGuard exposes DNS TCP/UDP 53 and administration TCP 3000 on the
   VM's LAN IP. WireGuard retains its keys/subnet (`10.13.13.0/24`) and UDP 51820;
-  its CoreDNS now forwards to AdGuard. Local DNS queries pass; remote-client VPN
-  handshakes and LAN access still need testing. Do not publicly forward 53/3000.
+  its CoreDNS now forwards to AdGuard. Local DNS queries pass; the owner confirmed
+  the old VPN profile works from outside the home network, and two peers have
+  recorded handshakes. The owner also confirmed an actual RustDesk connection.
+  Do not publicly forward 53/3000.
 - Heartbeat retains unauthenticated `POST /heartbeat` on TCP 8000 with
   `{"hostname":"kiosk-01","public_ip":"198.51.100.42"}` and response
   `{"status":"ok"}`. Hostname/IP validation prevents path traversal; writes are
   atomic. Existing JSON files were retained. No API key is required for legacy
   clients: submissions can be spoofed, so treat them only as IP-discovery hints
   and retain SSH host-key verification. An actual kiosk update is not yet verified.
+  The kiosk is outside without VPN, so it cannot reach `192.168.50.20`.
+  Check its existing public endpoint and TCP 8000 forwarding to the BASM VM;
+  a successful RustDesk session does not provide VPN routing for its heartbeat.
 - Heartbeat uses a locally imported image ID, not a registry-published image.
   Recovery requires saving/loading that image separately; a Compose file alone
   cannot pull it on a fresh machine.
@@ -119,7 +124,7 @@ replacement writers and reconcile any data created after cutover; a power-on
 alone does not reverse database or DNS changes. The old ERP site's maintenance
 mode also needs explicit review before serving users again.
 
-Before wiping Mint: verify real VPN/RustDesk/kiosk clients, browser workflows,
+Before wiping Mint: complete the real kiosk heartbeat and browser workflows,
 an independent encrypted backup copy and replacement-host recovery.
 Retain source disks without wiping them. Remove the temporary
 `/etc/sudoers.d/99-copilot-session` grant on both original hosts when maintenance
