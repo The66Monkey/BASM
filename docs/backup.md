@@ -62,6 +62,17 @@ and saved images. Existing manual
 host configuration (firewall, SSH, enabled WireGuard server, router and DNS)
 remains an IT responsibility.
 
+### Manually migrated services
+
+Compose stacks placed under `<BASM_ROOT>/modules/*/docker-compose.yml` are
+discovered by maintenance and recovery. Their in-tree bind-mounted data is
+included in snapshots, but this does not add application-specific database
+dumps or health checks. Test each service after recovery. Keep external source
+migration bundles and any locally built/imported container images in a separate
+protected recovery kit; a local-only image ID cannot be pulled from a registry.
+See the [migration checkpoint](operations.md#home-lab-migration-checkpoint-2026-11-02)
+for the manually migrated DNS/VPN and heartbeat stacks.
+
 After a bad update, preserve failed data and use a replacement host or an
 administrator-reviewed recovery procedure. Never downgrade images over migrated
 databases, delete business data, or remove an interruption marker merely to retry.

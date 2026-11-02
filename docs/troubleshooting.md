@@ -43,6 +43,14 @@ services automatically.
 
 ## Reverse proxy issues
 
+Let's Encrypt limits certificate issuance and failed authorizations, not
+ordinary HTTPS requests. Repeated installation/restarts while DNS or router
+forwarding is wrong can exhaust validation limits. Check authoritative DNS,
+public TCP 80/443 routing and Traefik's challenge configuration before retrying.
+Honor the ACME error's `retry after` timestamp. Use Let's Encrypt's staging
+environment for repeated deployment tests; staging certificates are not trusted
+for production. Do not bypass certificate verification as a production fix.
+
 - Verify that DNS points to the public IP
 - Check Traefik configuration in /opt/basm/config/traefik.yml
 - Confirm router forwarding is correct

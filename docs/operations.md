@@ -28,13 +28,96 @@ separately; BASM cannot retrieve them.
 
 ## Dynamic IP (non-static installs)
 
-Answer `non-static` at the public IP question and provide a deSEC API token.
+Answer `N` or `non-static` at the public IP question and provide a deSEC API token.
 BASM installs `/etc/cron.d/basm-ddns-*`, which checks the public IPv4 every
-4 hours and updates the deSEC A records for the primary, ERP, mail, and cloud
-hostnames when it changes. External access can be down for up to about 4 hours
+4 hours and updates the deSEC A records for the primary, ERP, mail, cloud and
+`mx` hostnames, plus the Fluxer hostname when selected, when it changes.
+External access can be down for up to about 4 hours
 after a change. All hostnames must belong to the same deSEC domain. Changes are
 logged to `<BASM_ROOT>/logs/ddns.log`. Expect possible mail deliverability
 problems on a dynamic IP.
+
+## Migrating a hand-built server
+
+`recover.sh` accepts complete BASM-format backups, not an arbitrary Mint/Docker
+installation. For a legacy installation, first save native application backups,
+configuration, encryption/signing keys, image versions and a database-consistent
+RustDesk SQLite backup. Keep a second verified copy before importing into a
+fresh BASM installation. Never copy a running database's raw files or restore
+another MariaDB version's system tables over the replacement.
+
+Restore ERPNext's database and public/private files, preserve its encryption
+key, and run migrations for the target application version. Restore Postal's
+application databases and signing/Rails secrets, retaining BASM's database
+connection settings. Preserving RustDesk's server keys avoids changing the
+identity configured on its clients. Imported application logins may differ
+from the fresh-install handover; update the private handover accordingly.
+
+Leave background mail delivery and ERP scheduling paused until cutover to avoid
+duplicate processing. Verify data counts, logins, file access and application
+workflows, not just container startup. Export DNS before editing it. Keep the
+source available for rollback until DNS, forwarding, certificates, VPN, backups
+and external clients have all been tested.
+
+### Home-lab migration checkpoint (2026-11-02)
+
+This deployment-specific checkpoint is not a supported installer profile:
+
+- Fedora DEN host: `192.168.50.245`, with KVM/libvirt and Cockpit Machines.
+  Its wired `enp3s0` is a port of `br0`; the host address is on the bridge.
+- Debian 13 BASM VM: `192.168.50.20`, MAC `52:54:00:cd:c7:7f`, 2 vCPUs,
+  6 GiB RAM and a 40 GiB disk; configured to autostart. Reserve its DHCP address.
+- Selected modules: core, LAMP, Uptime Kuma, KeePassXC and RustDesk. BASM Fluxer
+  and BASM's standard WireGuard module are not selected.
+- Mint source: `192.168.50.52` (also `.50`), still available; ERPNext, Postal
+  and RustDesk were imported. Selected ERP data counts, Postal account/domain
+  counts and the RustDesk public-key checksum match the source.
+- ERPNext worker/scheduler and Postal SMTP/worker remain stopped pending
+  cutover. The imported ERP site's scheduler is also disabled.
+- Compatibility stacks are under `/opt/basm/modules/migrated-network` and
+  `/opt/basm/modules/migrated-heartbeat`. These are manually managed additions,
+  not new built-in BASM modules.
+- Migrated AdGuard exposes DNS TCP/UDP 53 and administration TCP 3000 on the
+  VM's LAN IP. WireGuard retains its keys/subnet (`10.13.13.0/24`) and UDP 51820;
+  its CoreDNS now forwards to AdGuard. Local DNS queries pass; remote-client VPN
+  handshakes and LAN access still need testing. Do not publicly forward 53/3000.
+- Heartbeat retains unauthenticated `POST /heartbeat` on TCP 8000 with
+  `{"hostname":"kiosk-01","public_ip":"198.51.100.42"}` and response
+  `{"status":"ok"}`. Hostname/IP validation prevents path traversal; writes are
+  atomic. Existing JSON files were retained. No API key is required for legacy
+  clients: submissions can be spoofed, so treat them only as IP-discovery hints
+  and retain SSH host-key verification. An actual kiosk update is not yet verified.
+- Heartbeat uses a locally imported image ID, not a registry-published image.
+  Recovery requires saving/loading that image separately; a Compose file alone
+  cannot pull it on a fresh machine.
+- Router changes to BASM were reported applied. Trusted HTTPS checks still fail;
+  public TLS and application functionality are not yet signed off. DEN public
+  Fluxer HTTPS is temporarily unavailable under the BASM-first forwarding plan.
+- The guest OS still reports `Etc/UTC`. The wizard's application timezone does
+  not set the OS timezone; verify it separately because maintenance uses the
+  server clock.
+
+Source migration bundles are under `/backup/basm-migration-20261102.*` on Mint,
+with a verified copy under `/var/backups/mint-migration-20261102` in the VM.
+These contain secrets and must stay access-restricted. They are outside
+`/opt/basm`, so BASM's normal deployment snapshot does not include them.
+Restic snapshots before and after the main application import passed full
+verification; the heartbeat stack was added afterwards and needs a new backup.
+The repository is still on the VM's system disk, not independent backup storage.
+Full replacement-host `recover.sh` validation remains pending.
+
+To operate a compatibility stack explicitly:
+
+```sh
+sudo docker compose -f /opt/basm/modules/migrated-network/docker-compose.yml ps
+sudo docker compose -f /opt/basm/modules/migrated-heartbeat/docker-compose.yml ps
+```
+
+Before retiring Mint: finish public TLS, resume and test held services, verify
+real clients, take a fresh backup plus an independent copy and test recovery.
+Retain source disks without wiping them. Remove the temporary
+`/etc/sudoers.d/99-copilot-session` grant on both original hosts when maintenance
+access is no longer needed.
 
 ## Automatic application updates
 

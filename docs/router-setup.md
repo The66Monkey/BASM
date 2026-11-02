@@ -55,6 +55,66 @@ reverse DNS (PTR) arranged with the ISP. Confirm the ISP permits inbound and
 outbound TCP 25 and provides a public IP without carrier-grade NAT. Postal
 does not provide employee mailboxes or webmail.
 
+### Entering records in deSEC
+
+The **Record set type** selector chooses A, MX, TXT or CNAME. **Subname** is
+relative to your domain: for `mail.example.com` under `example.com`, enter
+`mail`. For the root domain, leave Subname **blank**, not `@`.
+
+The following example assumes the default BASM hostnames under `example.com`.
+Replace `example.com` with your primary domain and `PUBLIC_IPV4` with your
+current public IPv4 address. For customized hostnames, use the generated
+`<BASM_ROOT>/handover/dns-records.txt` (normally
+`/opt/basm/handover/dns-records.txt`).
+
+| Record set type | Subname | Preference (MX only) | Hostname / Content / IPv4 address | TTL |
+| --- | --- | --- | --- | --- |
+| A | *(blank)* | | `PUBLIC_IPV4` | 3600 |
+| A | `erp` | | `PUBLIC_IPV4` | 3600 |
+| A | `cloud` | | `PUBLIC_IPV4` | 3600 |
+| A | `mail` | | `PUBLIC_IPV4` | 3600 |
+| A | `mx` | | `PUBLIC_IPV4` | 3600 |
+| MX | *(blank)* | 10 | `mx.example.com.` | 3600 |
+| MX | `routes` | 10 | `mx.example.com.` | 3600 |
+| MX | `rp` | 10 | `mx.example.com.` | 3600 |
+| TXT | `spf` | | `"v=spf1 a:mail.example.com ~all"` | 3600 |
+| TXT | *(blank)* | | `"v=spf1 a mx include:spf.example.com ~all"` | 3600 |
+| TXT | `rp` | | `"v=spf1 a mx include:spf.example.com ~all"` | 3600 |
+| TXT | `_dmarc` | | `"v=DMARC1; p=none"` | 3600 |
+| CNAME | `psrp` | | `rp.example.com.` | 3600 |
+| CNAME | `track` | | `mail.example.com.` | 3600 |
+
+deSEC requires **surrounding double quotation marks for TXT content**; enter
+them as shown. MX Preference is a separate field: enter `10` there, not as
+part of the Hostname. The trailing dot marks an absolute DNS hostname.
+Only add `chat` (or your configured Fluxer hostname) if BASM Fluxer is selected.
+
+Publish the exact DKIM subname and quoted TXT content shown in Postal's domain
+DNS setup; the selector and key are deployment-specific. Retain the old DKIM
+selector while the old mail system is still in use. Have only **one SPF record
+per name**: edit an existing SPF record rather than adding a second. If other
+providers also send mail for the domain, preserve their authorization in that
+single policy. `p=none` monitors DMARC; it does not enforce rejection.
+
+Do not wipe the zone or delete NS, existing mail, or certificate-challenge
+records during migration. Export the existing records before making changes.
+Adding MX records can change inbound delivery even before router forwarding
+changes, so coordinate mail DNS with the migration.
+
+### Sharing a domain with DEN
+
+BASM's non-static updater manages A records for the root, ERP, mail, cloud and
+`mx`, plus Fluxer only when selected. DEN manages `home`, `media`, `photos`,
+`files`, `git`, and its enabled `chat`/`downloads` records. Separate ownership
+lets both update the same zone; avoid configuring both to manage the same name.
+Use separate API tokens with record-scoped permissions where possible.
+
+DDNS updates public addresses, not the complete Postal DNS configuration above.
+One public IPv4 also does not route HTTPS to different internal servers by
+hostname: that needs an explicitly configured shared reverse proxy, or private
+DEN access through its VPN. Preserve the old server and forwarding until the
+replacement has been tested and cutover is approved.
+
 ## DNS and server access
 
 Do not expose SSH by default. Prefer a configured VPN for remote administration.
