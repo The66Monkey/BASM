@@ -90,8 +90,10 @@ This deployment-specific checkpoint is not a supported installer profile:
 - Heartbeat uses a locally imported image ID, not a registry-published image.
   Recovery requires saving/loading that image separately; a Compose file alone
   cannot pull it on a fresh machine.
-- Router changes to BASM were reported applied. Trusted HTTPS checks still fail;
-  public TLS and application functionality are not yet signed off. DEN public
+- Router changes to BASM were reported applied. All three public hostnames
+  passed ACME staging validation using a separate resolver/storage file, then
+  production issuance. Trusted HTTPS now returns ERP 200 and Postal/Cloud 302;
+  authenticated workflows and external-client tests are not yet signed off. DEN public
   Fluxer HTTPS is temporarily unavailable under the BASM-first forwarding plan.
 - The guest OS still reports `Etc/UTC`. The wizard's application timezone does
   not set the OS timezone; verify it separately because maintenance uses the
@@ -105,6 +107,12 @@ Restic snapshots before and after the main application import passed full
 verification; the heartbeat stack was added afterwards and needs a new backup.
 The repository is still on the VM's system disk, not independent backup storage.
 Full replacement-host `recover.sh` validation remains pending.
+
+Existing legacy VPN profiles retain their server identity because keys, peer
+addresses and UDP 51820 were preserved. New QR codes are not required solely
+for this move. Check the endpoint, DNS and a real handshake after forwarding
+changes. DEN's separate VPN profiles use UDP 41873 and are not interchangeable
+with the migrated legacy VPN. Never publish profiles or QR codes in documentation.
 
 To operate a compatibility stack explicitly:
 

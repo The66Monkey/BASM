@@ -51,6 +51,14 @@ Honor the ACME error's `retry after` timestamp. Use Let's Encrypt's staging
 environment for repeated deployment tests; staging certificates are not trusted
 for production. Do not bypass certificate verification as a production fix.
 
+For Traefik, validate with an isolated staging resolver and a separate ACME
+storage file (for example `/data/acme-staging-validation.json`), selecting that
+resolver on the intended routers. Preserve the production account/storage.
+After every hostname succeeds against staging and any production retry-after
+time has passed, restore the production resolver and validate with ordinary
+certificate verification. Do not delete the production ACME account, loop
+restarts or repeatedly rerun the installer to work around limits.
+
 - Verify that DNS points to the public IP
 - Check Traefik configuration in /opt/basm/config/traefik.yml
 - Confirm router forwarding is correct
