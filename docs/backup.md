@@ -70,7 +70,7 @@ included in snapshots, but this does not add application-specific database
 dumps or health checks. Test each service after recovery. Keep external source
 migration bundles and any locally built/imported container images in a separate
 protected recovery kit; a local-only image ID cannot be pulled from a registry.
-See the [migration checkpoint](operations.md#home-lab-migration-checkpoint-2026-11-02)
+See the [migration checkpoint](migration.md#home-lab-migration-checkpoint-2026-11-02)
 for the manually migrated DNS/VPN and heartbeat stacks.
 
 After a bad update, preserve failed data and use a replacement host or an
