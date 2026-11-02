@@ -7,6 +7,16 @@ TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 source "$ROOT_DIR/modules/core.sh"
 
+for answer in s S static STATIC; do
+  [[ "$(prompt_ip_mode <<< "$answer")" == static ]]
+done
+for answer in n N non-static NON-STATIC; do
+  [[ "$(prompt_ip_mode <<< "$answer")" == non-static ]]
+done
+[[ "$(prompt_ip_mode <<< '')" == static ]]
+[[ "$(prompt_ip_mode non-static <<< '')" == non-static ]]
+[[ "$(printf 'invalid\nN\n' | prompt_ip_mode)" == non-static ]]
+
 BASM_PROFILE_DIR="$TEST_DIR/profile.d"
 install_login_banner
 cmp "$ROOT_DIR/templates/profile.d/basm.sh" "$BASM_PROFILE_DIR/basm.sh"

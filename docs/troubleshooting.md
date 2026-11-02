@@ -8,6 +8,18 @@ Check the following:
 - The host can reach Docker repositories
 - The user is truly root or using sudo correctly
 
+If APT reports `Permission denied` reading `docker.gpg`, older installers created
+the public repository files with root-only permissions. Repair them with:
+
+```sh
+sudo chmod 755 /etc/apt/keyrings
+sudo chmod 644 /etc/apt/keyrings/docker.gpg /etc/apt/sources.list.d/docker.list
+sudo apt-get update
+```
+
+Current installers set these permissions before installing Docker, including on
+retries. Do not disable repository signature verification.
+
 ## Docker stack fails to start
 
 Review the stack and logs:
@@ -23,6 +35,11 @@ The wizard warns before continuing. If a service still fails, check which progra
 
 - ss -lntup | grep :80
 - ss -lntup | grep :443
+
+For Postal's SMTP port, run `sudo ss -ltnp 'sport = :25'`. Debian may already
+have Exim installed for local mail delivery. If it is not needed, explicitly
+stop and disable it before retrying; the installer does not stop existing mail
+services automatically.
 
 ## Reverse proxy issues
 

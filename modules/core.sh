@@ -466,7 +466,7 @@ prompt_value() {
 
   while true; do
     if [[ -n "$default_value" ]]; then
-      read -rp "$label [$default_value]: " value
+      read -rp "$label [$default_value] (press Enter to accept): " value
     else
       read -rp "$label: " value
     fi
@@ -486,6 +486,70 @@ prompt_value() {
     printf '%s\n' "$value"
     return 0
   done
+}
+
+prompt_ip_mode() {
+  local choice
+  choice="$(prompt_value "Public IP type: S = static, N = non-static (keeps deSEC DNS updated)" "${1:-static}" '[[ "${1,,}" == s || "${1,,}" == n || "${1,,}" == static || "${1,,}" == non-static ]]')" || return
+  case "${choice,,}" in
+    s|static) printf 'static\n' ;;
+    n|non-static) printf 'non-static\n' ;;
+  esac
+}
+
+select_backup_destination() {
+  local default_path="$1" mounts candidates mount source choice destination existing root_device backup_device
+  local -a destinations=("$default_path")
+  mounts="$(findmnt --real --list --json --output TARGET,SOURCE,OPTIONS)" ||
+    fail "Could not list mounted backup filesystems."
+  candidates="$(jq -r '.filesystems[] |
+    select(.source | startswith("/dev/")) |
+    select(.target != "/" and (.target | test("^/(boot|dev|proc|sys|run)(/|$)|^/var/lib/(docker|containers)(/|$)") | not)) |
+    select(.options | split(",") | index("rw")) |
+    [.target, .source] | @tsv' <<< "$mounts")" ||
+    fail "Could not read mounted backup filesystems."
+
+  printf '\nBackup destination (only already-mounted disks are listed):\n' >&2
+  printf '  1) Default directory: %s\n' "$default_path" >&2
+  while IFS=$'\t' read -r mount source; do
+    [[ -n "$mount" ]] || continue
+    validate_backup_path "$mount" || continue
+    destination="${mount%/}/basm-backups"
+    [[ "$destination" != "$default_path" ]] || continue
+    destinations+=("$destination")
+    printf '  %s) %s on %s -> %s\n' "${#destinations[@]}" "$source" "$mount" "$destination" >&2
+  done <<< "$candidates"
+  local custom_choice=$((${#destinations[@]} + 1))
+  printf '  %s) Custom directory (e.g. an already-mounted network share)\n' "$custom_choice" >&2
+  printf 'You can also enter an absolute directory path directly.\n' >&2
+  printf 'No disks will be formatted or mounted. An in-VM backup needs an off-host copy too.\n' >&2
+  while true; do
+    read -rp "Backup destination [1] (press Enter to accept): " choice || fail "No backup destination selection received."
+    choice="${choice:-1}"
+    if [[ "$choice" == /* ]] && validate_backup_path "$choice"; then
+      destination="$choice"
+      break
+    fi
+    if [[ "$choice" == "$custom_choice" ]]; then
+      destination="$(prompt_value "Backup destination directory" "$default_path" 'validate_backup_path "$1"')"
+      break
+    fi
+    if [[ "$choice" =~ ^[1-9][0-9]{0,3}$ ]] && (( choice <= ${#destinations[@]} )); then
+      destination="${destinations[choice-1]}"
+      break
+    fi
+    warn "Choose one of the listed backup destinations."
+  done
+  existing="$destination"
+  while [[ ! -e "$existing" ]]; do existing="$(dirname "$existing")"; done
+  root_device="$(findmnt --noheadings --output MAJ:MIN --target /)" ||
+    fail "Could not identify the system filesystem."
+  backup_device="$(findmnt --noheadings --output MAJ:MIN --target "$existing")" ||
+    fail "Could not identify the backup filesystem."
+  if [[ "$root_device" == "$backup_device" ]]; then
+    warn "Backup destination is on the system filesystem. Disk failure would lose both the deployment and its backups."
+  fi
+  printf '%s\n' "$destination"
 }
 
 select_deployment() {
@@ -676,17 +740,17 @@ run_wizard() {
     warn "A real administrator email address is required for production certificates."
   done
   [[ -n "$ADMIN_EMAIL" ]] || fail "No valid administrator email address was provided."
-  TIMEZONE="$(prompt_value "Timezone" "${TIMEZONE:-Etc/UTC}" 'validate_timezone "$1"')"
+  TIMEZONE="$(prompt_value "Timezone (IANA name, e.g. Europe/Stockholm; list with timedatectl list-timezones)" "${TIMEZONE:-Etc/UTC}" 'validate_timezone "$1"')"
   NEXTCLOUD_ADMIN_USER="$(prompt_value "Nextcloud administrator username" "${NEXTCLOUD_ADMIN_USER:-basm-admin}" 'validate_admin_username "$1"')"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then BACKUP_LOCATION="${BACKUP_LOCATION:-/var/backups/basm}"; fi
-  BACKUP_LOCATION="$(prompt_value "Backup destination directory" "${BACKUP_LOCATION:-$BASM_ROOT/backups}" 'validate_backup_path "$1"')"
+  BACKUP_LOCATION="$(select_backup_destination "${BACKUP_LOCATION:-$BASM_ROOT/backups}")"
 
   SSH_PORT="${SSH_PORT:-22}"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then
     ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-    IP_MODE="$(prompt_value "Public IP type: static, or non-static (keeps deSEC DNS updated)" "${IP_MODE:-static}" '[[ "$1" == static || "$1" == non-static ]]')"
+    IP_MODE="$(prompt_ip_mode "${IP_MODE:-static}")"
     if [[ "$IP_MODE" == non-static ]]; then
       local token=""
       for attempt in 1 2 3; do
@@ -737,11 +801,13 @@ run_wizard() {
 
 ensure_docker() {
   if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    install -m 0755 -d /etc/apt/keyrings || return
     if [[ ! -f /etc/apt/sources.list.d/docker.list ]]; then
-      install -m 0755 -d /etc/apt/keyrings || return
       curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || return
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list || return
     fi
+    # APT verifies repositories as _apt, including on retries after a failed install.
+    chmod 0644 /etc/apt/keyrings/docker.gpg /etc/apt/sources.list.d/docker.list || return
     ensure_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return
   fi
 }

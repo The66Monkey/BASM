@@ -23,6 +23,40 @@ uses ports 80 and 443 by default, which can conflict with a host web server.
 5. Select the desired modules.
 6. Review the generated summary in output/installation-summary.txt.
 
+For prompts showing a value in square brackets, press Enter to accept that
+default, or type a replacement and press Enter. For example, at
+`ERP URL [erp.example.com] (press Enter to accept):`, pressing Enter keeps
+`erp.example.com`. Prompts without a default require an answer.
+
+For **Public IP type**, enter `S` for static or `N` for non-static (dynamic IP).
+Letters are case-insensitive; `static` and `non-static` also work. Press Enter
+to accept the displayed default. Non-static mode asks for a deSEC API token and
+enables automatic DNS updates.
+
+### Choosing a timezone
+
+Enter an IANA timezone name, such as `Europe/Stockholm` for anywhere in Sweden
+(including Varberg), rather than a city name like `Varberg` or an abbreviation
+like `CET`. Regional timezones automatically handle daylight-saving changes.
+Press Enter to keep the displayed default; `Etc/UTC` uses UTC all year.
+
+Run `timedatectl list-timezones` in another terminal to browse available names.
+
+### Choosing a backup destination
+
+The wizard offers a numbered list: the default directory, writable mounted disk
+filesystems, and a custom directory. Disk choices use a `basm-backups`
+subdirectory on the selected mount. The installer does not format or mount disks;
+attach and mount a backup disk or network share before starting the wizard.
+Unmounted disks and host disks not attached/shared with a VM are not available.
+
+Press Enter to keep the default (`/var/backups/basm` in production). This normally
+stores backups on the system disk; the wizard warns if the destination shares
+the system filesystem. It is useful for initial testing but does not protect
+against disk failure. A different partition or virtual disk on the same physical
+disk also does not provide disk-failure protection. Keep an independent encrypted
+off-host copy; see [backup and recovery](backup.md).
+
 ## Installer behavior
 
 The installer does the following:

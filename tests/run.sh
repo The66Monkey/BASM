@@ -8,6 +8,7 @@ for script in install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh
 done
 shellcheck --severity=error -x -P "$ROOT" install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh templates/*.sh templates/profile.d/*.sh tests/*.sh
 bash tests/configuration.sh
+bash tests/backup-destination.sh
 bash tests/local-mode.sh
 bash tests/lifecycle.sh
 bash tests/keepass.sh
