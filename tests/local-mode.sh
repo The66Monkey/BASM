@@ -114,11 +114,11 @@ for address in 127.0.0.1 192.168.1.50; do
   [[ "$(stat -c '%a' "$BASM_ENV_FILE")" == 600 ]]
   [[ "$(stat -c '%a' "$BASM_ROOT/config/postal/postal.yml")" == 640 ]]
   [[ "$(stat -c '%a' "$BASM_ROOT/config/postal/signing.key")" == 640 ]]
-  grep -Fq 'image: frappe/erpnext:v16.52.1' "$BASM_ROOT/docker-compose.yml"
+  [[ "$(stat -c '%a' "$BASM_ROOT/config/postal")" == 750 ]]
+  grep -Fq 'image: frappe/erpnext:v16' "$BASM_ROOT/docker-compose.yml"
   grep -Fq 'NEXTCLOUD_ADMIN_PASSWORD:' "$BASM_ROOT/docker-compose.yml"
   grep -Fq '"127.0.0.1:2525:25"' "$BASM_ROOT/docker-compose.yml"
-  grep -Fq 'restic backup /source/erpnext' "$BASM_ROOT/docker-compose.yml"
-  grep -Fq 'mariadb-dump --skip-ssl' "$BASM_ROOT/docker-compose.yml"
+  if grep -Eq 'restic-backup:|db-backup:' "$BASM_ROOT/docker-compose.yml"; then exit 1; fi
   ! grep -Fq "$DB_ROOT_PASSWORD" "$BASM_ROOT/docker-compose.yml"
   if command -v docker >/dev/null 2>&1; then
     docker compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" config -q
@@ -159,8 +159,9 @@ grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
 grep -Fq 'container_name: basm-traefik' "$BASM_ROOT/docker-compose.yml"
 grep -Fqx 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
 source "$ROOT_DIR/modules/lamp.sh"
+MANAGEMENT_BIND_ADDRESS=127.0.0.1
 module_install
-grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
+grep -Fq '"127.0.0.1:8080:80"' "$BASM_ROOT/modules/lamp/docker-compose.yml"
 select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
 [[ "$LOCAL_MODE" == false ]]
 [[ "$PRIMARY_DOMAIN" == business.example ]]

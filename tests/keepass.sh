@@ -89,7 +89,7 @@ master = (root / "config/keepass-master-password").read_text().strip()
 vault = PyKeePass(root / "config/credentials.kdbx", password=master)
 assert vault.find_entries(title="Nextcloud administrator", first=True).password == "OwnerChangedPassword"
 assert len(vault.find_entries(title="ERPNext administrator")) == 1
-assert vault.find_entries(title="Uptime Kuma administrator", first=True).url == "http://localhost:18301"
+assert vault.find_entries(title="Uptime Kuma administrator", first=True).url == "http://127.0.0.1:18301"
 PY
 checksum="$(sha256sum "$DATABASE")"
 mv "$MASTER_FILE" "$MASTER_FILE.saved"

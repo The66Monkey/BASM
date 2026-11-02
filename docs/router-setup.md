@@ -64,3 +64,9 @@ private, and never forward database or Docker ports.
 
 SSH access is limited to key-based authentication with the standard Debian
 configuration; the installer does not modify SSH settings.
+
+Production LAMP and Uptime Kuma default to loopback-only listeners. Use SSH
+tunnels, or explicitly configure a private LAN `MANAGEMENT_BIND_ADDRESS`.
+Existing module bindings are not changed until those modules are regenerated.
+Public ERP, cloud and Postal routes remain public; BASM does not copy DEN's
+private-home-app firewall policy onto a business server.

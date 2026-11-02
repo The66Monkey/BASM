@@ -1,89 +1,44 @@
 #!/usr/bin/env bash
-set -uo pipefail
-
+set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="$ROOT_DIR/config"
-case "${1:-}" in
-  --help|-h)
-    printf 'Usage: ./update.sh [--scheduled <deployment-directory>]\n'
-    exit 0
-    ;;
-esac
-SCHEDULED=false
-if [[ $# -eq 2 && "$1" == --scheduled ]]; then
-  SCHEDULED=true
-  BASM_ROOT="$2"
-elif [[ $# -ne 0 ]]; then
-  printf 'Usage: ./update.sh [--scheduled <deployment-directory>]\n' >&2
-  exit 1
-fi
-BASM_ROOT="${BASM_ROOT:-/opt/basm}"
-PRODUCTION_BASM_ROOT="$BASM_ROOT"
-LOCAL_BASM_ROOT="$BASM_ROOT"
-if [[ "$LOCAL_BASM_ROOT" == /opt/basm ]]; then LOCAL_BASM_ROOT=/opt/basm-local; fi
-
 source "$ROOT_DIR/modules/core.sh"
-
+SCHEDULED=false
+EXPLICIT_ROOT=false
+RELEASE="$ROOT_DIR"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      printf 'Usage: update.sh [--root DIRECTORY | --scheduled DIRECTORY] [--release TRUSTED_CHECKOUT]\n'
+      exit 0 ;;
+    --root|--scheduled)
+      [[ $# -ge 2 && "$EXPLICIT_ROOT" == false ]] || fail "Select one deployment directory."
+      [[ "$1" != --scheduled ]] || SCHEDULED=true
+      BASM_ROOT="$2"; EXPLICIT_ROOT=true; shift 2 ;;
+    --release)
+      [[ $# -ge 2 ]] || fail "--release requires a checkout path."
+      RELEASE="$(realpath -e "$2")"; shift 2 ;;
+    *) fail "Unknown option: $1" ;;
+  esac
+done
 require_root
-LOCAL_MODE=false
-if [[ "$SCHEDULED" == true ]]; then
-  BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
-else
+if [[ "$EXPLICIT_ROOT" == false ]]; then
+  PRODUCTION_BASM_ROOT="$BASM_ROOT"
+  LOCAL_BASM_ROOT="$BASM_ROOT"
+  [[ "$LOCAL_BASM_ROOT" != /opt/basm ]] || LOCAL_BASM_ROOT=/opt/basm-local
   select_deployment
+else
+  BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
 fi
 load_deployment_env
-if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then LOCAL_MODE=true; fi
-
-if [[ "$LOCAL_MODE" == true ]]; then
-  [[ -f "$BASM_ROOT/config/basm.env" ]] || fail "No local BASM configuration was found at $BASM_ROOT"
-  source "$BASM_ROOT/config/basm.env"
-  [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "The selected configuration is not a local test setup."
-  validate_local_bind_address "$BIND_ADDRESS" || fail "Unsafe local bind address."
-fi
-
-if [[ ! -f "$BASM_ROOT/docker-compose.yml" ]]; then
-  fail "No BASM stack was found at $BASM_ROOT"
-fi
-
-umask 077
-mkdir -p "$BASM_ROOT/logs" || fail "Cannot create update log directory."
-exec 9> "$BASM_ROOT/logs/update.lock"
-flock -n 9 || fail "Another BASM update is already running."
-
+[[ -f "$BASM_ROOT/docker-compose.yml" ]] || fail "No BASM stack found."
+install_operation_trap "Application update"
 if [[ "$SCHEDULED" == true ]]; then
-  log "Creating pre-update database dumps"
-  basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" exec -T db-backup sh -ec '
-    umask 077
-    MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h erp-db -uroot --all-databases > /dumps/pre-update-erp.sql
-    MYSQL_PWD="$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h nextcloud-db -uroot --all-databases > /dumps/pre-update-nextcloud.sql
-    MYSQL_PWD="$POSTAL_DB_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h postal-db -uroot --all-databases > /dumps/pre-update-postal.sql
-  ' || fail "Pre-update database backup failed; no applications were updated."
-  if module_selected fluxer; then
-    source "$ROOT_DIR/modules/fluxer.sh"
-    module_backup || fail "Fluxer backup failed; no applications were updated."
-  fi
-  log "Creating encrypted pre-update snapshot"
-  basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" exec -T restic-backup restic backup --tag basm-pre-update /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config /source/fluxer-backups || fail "Pre-update snapshot failed; no applications were updated."
+  [[ ! -e "$BASM_ROOT/config/disable-auto-updates" ]] || exit 0
+  hour="$(date +%H)"
+  scheduled_update_window "$hour" || fail "Scheduled updates only run between 00:00 and 06:00 server time."
+  acquire_operation_lock update 7200
+  scheduled_update_window "$(date +%H)" || fail "Maintenance window ended while waiting for the BASM lock."
+else
+  acquire_operation_lock
 fi
-
-log "Pulling latest Docker images"
-basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" pull --quiet || fail "Failed to pull new images"
-
-log "Recreating containers with preserved volumes"
-basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" up -d --wait --wait-timeout 900 --remove-orphans || fail "Failed to recreate containers or pass health checks"
-
-while IFS= read -r compose_file; do
-  log "Updating module stack $compose_file"
-  module_name="$(basename "$(dirname "$compose_file")")"
-  module_wait_timeout=300
-  if [[ "$module_name" == fluxer ]]; then module_wait_timeout=900; fi
-  run_module_update "$module_name" || fail "Failed to refresh $module_name module configuration"
-  if [[ "$module_name" == fluxer ]]; then continue; fi
-  module_compose "$compose_file" pull --quiet || fail "Failed to pull images for $compose_file"
-  module_compose "$compose_file" up -d --wait --wait-timeout "$module_wait_timeout" --remove-orphans || fail "Failed to recreate $compose_file or pass health checks"
-done < <(module_compose_files "$BASM_ROOT")
-
-log "Validating BASM stack health"
-basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" ps || fail "Stack health validation failed"
-
-log "Update completed successfully"
+update_deployment "$RELEASE"

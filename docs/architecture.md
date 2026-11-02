@@ -41,6 +41,8 @@ initializer, web, SMTP, and worker services. It does not use RabbitMQ.
 
 - Deployment values and generated credentials are stored outside the
   repository at `<BASM_ROOT>/config/basm.env` with mode `0600`.
+- Settings are parsed as data, not sourced as shell code. Traefik routes are
+  structurally merged into one mapping, including optional Fluxer routes.
 - Selected ports are saved and propagated to Compose mappings, module configs,
   and summary URLs.
 - Generated secrets are reused to recreate containers and deployment artifacts
@@ -55,24 +57,43 @@ initializer, web, SMTP, and worker services. It does not use RabbitMQ.
 
 ## Backups
 
-MariaDB databases are dumped daily, then Restic encrypts application data,
-configuration, and dumps. Retention is seven daily, four weekly, and twelve
-monthly snapshots. The default repository is local to the host, so an off-host
-copy is required for disaster recovery.
+The host runs one coordinated 02:00 backup. Writers pause before fresh MariaDB
+dumps; databases and module stacks then stop for a cold, complete snapshot.
+Previously running services restart on success or failure. Restic covers the
+deployment root, including installed code, all module data, saved image digests
+and a Fluxer recovery archive, while excluding logs and the backup destination.
+Retention is seven daily, four weekly and twelve monthly snapshots. An off-host
+copy and independent recovery credentials remain necessary.
 
 ## Automatic updates
 
 - The updater is installed under `<BASM_ROOT>/maintenance/` with a
   deployment-specific job in `/etc/cron.d/`.
 - Schedule: 03:00 on January 1 and July 1 (cron month field `1,7`).
-- Before updating, it dumps all three databases and creates a Restic snapshot;
-  failure of either aborts the run.
-- It prevents overlapping runs (shared lock with `update.sh`), pulls configured
-  image tags, recreates core and selected module containers, and waits for
-  running/healthy state. There is no automatic rollback.
+- Manual and scheduled updates use the same complete pre-update backup.
+- Compatible image channels resolve to digest locks. Nextcloud upgrades are
+  sequential; database-series and ERPNext-major transitions require tested
+  scripts under `migrations/`. Scripts receive `BASM_ROOT` and `BASM_ENV_FILE`.
+- All operator mutations and installer actions share a lock. Interrupted updates
+  retain `config/update-in-progress` and block retries. There is no automatic rollback.
+- Scheduled updates refuse execution outside 00:00-06:00. They do not update
+  Debian or fetch BASM source releases; reviewed source can be supplied manually.
 - Logs: `<BASM_ROOT>/logs/automatic-updates.log`.
 - Disable with `<BASM_ROOT>/config/disable-auto-updates`; this survives
   installer reruns. Cron schedule edits are reset by installer reruns.
+
+## Operator tools
+
+`bin/basm`, `update.sh`, `recover.sh`, module helpers, templates and `VERSION`
+are installed under `maintenance/`; `/usr/local/bin/basm` points to the CLI.
+`modules/operations.sh` handles locking, scheduling, health and notifications;
+`modules/backup.sh` handles snapshots/restores; `modules/releases.sh` handles
+release gates and application updates. `modules/core.sh` retains installation
+and business handover logic.
+
+Hourly checks validate expected services, web endpoints, backup age and free
+space. Failures reach the journal and an optional configured HTTPS webhook.
+See [testing](testing.md) for automated coverage and remaining live acceptance.
 
 ## Dynamic DNS
 

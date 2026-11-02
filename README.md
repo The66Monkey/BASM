@@ -64,16 +64,26 @@ database instead; the user document contains only its location and master passwo
 
 ## How are backups handled?
 
-Encrypted daily Restic snapshots cover application data, configuration, and
-database dumps (7 daily, 4 weekly, 12 monthly). The default repository is on the
-server itself, so copy it to a separate system. See [backup](docs/backup.md).
+At 02:00, applications briefly pause for encrypted Restic snapshots covering
+all modules, configuration, database dumps and recovery image versions
+(7 daily, 4 weekly, 12 monthly). Keep an independent off-host copy.
+See [backup and recovery](docs/backup.md).
 
 ## How are updates handled?
 
-Application images are updated automatically on January 1 and July 1 after a
-database dump and Restic snapshot; a failed backup stops the update. Run
-`sudo ./update.sh` for a manual update. See
+Application images are updated automatically at **03:00 on January 1 and July 1**
+(server time). Both automatic and manual updates require a complete backup,
+record immutable image versions, and gate incompatible major upgrades.
+Run `sudo basm update` for a manual update. See
 [operations](docs/operations.md#automatic-application-updates).
+
+## Day-to-day operation
+
+Use `sudo basm status`, `sudo basm check`, and `sudo basm logs`.
+For a local install, add `--root /opt/basm-local` before the command.
+Hourly checks detect missing services, stale backups and low disk space.
+An optional HTTPS webhook can notify IT of failures; see
+[operations](docs/operations.md#checks-and-failure-notifications).
 
 ## What survives upgrades?
 

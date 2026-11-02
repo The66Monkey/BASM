@@ -53,3 +53,4 @@ acme.json
 *.kdbx.*
 /config/keepass-master-password*
 output/*
+__pycache__/

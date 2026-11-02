@@ -20,13 +20,13 @@ module_install() {
     cp "${BASM_ENV_FILE:-$ROOT_DIR/config/basm.env}" "$BASM_ROOT/config/basm.env"
     chmod 600 "$BASM_ROOT/config/basm.env"
   fi
-  render_stack
+  render_stack || fail "Cannot render the BASM stack."
 
   if command -v docker >/dev/null 2>&1; then
     log "Starting BASM Docker stack"
-    basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" up -d --remove-orphans --quiet-pull || fail "Docker stack did not start cleanly. Review the Compose output and logs."
-    basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" wait erpnext-create-site postal-initialize || fail "A core service initialization job failed. Review the Compose logs."
-    basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" up -d --remove-orphans --quiet-pull || fail "Docker stack did not reach its final running state."
+    basm_stack up -d --remove-orphans --quiet-pull || fail "Docker stack did not start cleanly. Review the Compose output and logs."
+    basm_stack wait erpnext-create-site postal-initialize || fail "A core service initialization job failed. Review the Compose logs."
+    basm_stack up -d --wait --wait-timeout 900 --remove-orphans --quiet-pull || fail "Docker stack did not reach its final running state."
     if [[ ! -f "$BASM_ROOT/config/postal-admin-created" ]]; then
       printf '%s\nBASM\nAdmin\n%s\n' "$ADMIN_EMAIL" "$POSTAL_ADMIN_PASSWORD" |
         basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" run --rm -T postal-runner postal make-user || fail "Postal admin user creation failed."

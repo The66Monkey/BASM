@@ -4,12 +4,17 @@ set -euo pipefail
 umask 077
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ROOT_DIR/modules/core.sh"
 BASM_ROOT="${1:?Usage: ddns-update.sh <BASM_ROOT>}"
 STATE_FILE="$BASM_ROOT/config/last-public-ip"
 LOG_FILE="$BASM_ROOT/logs/ddns.log"
 
-source "$BASM_ROOT/config/basm.env"
+BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+load_deployment_env
 [[ "${IP_MODE:-static}" == non-static && -n "${DESEC_TOKEN:-}" ]] || exit 0
+acquire_operation_lock check
+install_operation_trap "Dynamic DNS update"
 
 note() { printf '%s: %s\n' "$(date -Is)" "$1" >> "$LOG_FILE"; }
 

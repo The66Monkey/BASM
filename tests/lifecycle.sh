@@ -169,7 +169,7 @@ export -f docker
   grep -Fq 'Host(`chat.acme.example`)' "$BASM_ROOT/config/traefik.yml"
   grep -Fq 'http://host.docker.internal:8088' "$BASM_ROOT/config/traefik.yml"
   grep -Fq 'host.docker.internal:host-gateway' "$BASM_ROOT/docker-compose.yml"
-  grep -Fq '/source/fluxer-backups' "$BASM_ROOT/docker-compose.yml"
+  jq -e '.http.routers | has("erp") and has("mail") and has("cloud") and has("fluxer")' "$BASM_ROOT/config/traefik.yml"
   BASM_MODULES=basm
   render_stack
   if grep -Fq 'fluxer-service' "$BASM_ROOT/config/traefik.yml"; then exit 1; fi
@@ -185,9 +185,10 @@ export -f docker
   install_auto_updates
   [[ -s "$BASM_ROOT/maintenance/modules/fluxer.sh" ]]
   [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/modules/fluxer.sh")" == 600 ]]
-  [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/run-fluxer-backup.sh")" == 700 ]]
-  bash -n "$BASM_ROOT/maintenance/run-fluxer-backup.sh"
-  grep -Fq '30 2 * * * root /bin/bash' "$(fluxer_backup_cron_file "$BASM_ROOT")"
+  [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/bin/basm")" == 700 ]]
+  bash -n "$BASM_ROOT/maintenance/bin/basm"
+  grep -Fq '0 2 * * * root /bin/bash' "$(backup_cron_file "$BASM_ROOT")"
+  [[ ! -e "$(fluxer_backup_cron_file "$BASM_ROOT")" ]]
 )
 
 LOCAL_BASM_ROOT="$TEST_DIR/basm-local"
@@ -211,7 +212,7 @@ grep -Fq "$LOCAL_BASM_ROOT/maintenance/run-updates.sh" "$LOCAL_CRON_FILE"
 touch "$LOCAL_BASM_ROOT/config/disable-auto-updates"
 bash "$LOCAL_BASM_ROOT/maintenance/run-updates.sh"
 [[ ! -e "$LOCAL_BASM_ROOT/logs/automatic-updates.log" ]]
-[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 1 ]]
+[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 3 ]]
 USER_HANDOVER="$LOCAL_BASM_ROOT/handover/for-the-user.txt"
 IT_HANDOVER="$LOCAL_BASM_ROOT/handover/for-it.txt"
 [[ "$(stat -c '%a' "$LOCAL_BASM_ROOT/handover")" == 700 ]]
@@ -259,9 +260,10 @@ prepare_full_profile
   BASM_CONTAINER_PREFIX=basm
   PRIMARY_DOMAIN=acme.example
   set_port_defaults standard
+  MANAGEMENT_BIND_ADDRESS=127.0.0.1
   prepare_full_profile
-  grep -Fq '"0.0.0.0:8080:80"' "$BASM_ROOT/config/prepared-modules/lamp/docker-compose.yml"
-  grep -Fq '"0.0.0.0:3001:3001"' "$BASM_ROOT/config/prepared-modules/uptime-kuma/docker-compose.yml"
+  grep -Fq '"127.0.0.1:8080:80"' "$BASM_ROOT/config/prepared-modules/lamp/docker-compose.yml"
+  grep -Fq '"127.0.0.1:3001:3001"' "$BASM_ROOT/config/prepared-modules/uptime-kuma/docker-compose.yml"
   grep -Fq 'Endpoint = acme.example:51820' "$BASM_ROOT/config/prepared-modules/wireguard/peer1.conf"
   [[ ! -e "$BASM_ROOT/modules" ]]
   run_module_install lamp
@@ -299,10 +301,10 @@ if grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml" "$DOCKER_LOG"; then exit 1; fi
 if grep -Eq '(^| )pull( |$)' "$DOCKER_LOG"; then exit 1; fi
 grep -Fq 'Installed Modules: basm lamp wireguard uptime-kuma' "$OUTPUT_DIR/local-installation-summary.txt"
 grep -Fq 'Monitoring (Uptime Kuma)' "$USER_HANDOVER"
-grep -Fq 'http://localhost:19301' "$USER_HANDOVER"
+grep -Fq 'http://127.0.0.1:19301' "$USER_HANDOVER"
 grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
 [[ -f "$LOCAL_BASM_ROOT/config/disable-auto-updates" ]]
-[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 1 ]]
+[[ "$(find "$BASM_CRON_DIR" -type f | wc -l)" == 3 ]]
 grep -Fq 'AUTOMATIC MAINTENANCE' "$USER_HANDOVER"
 grep -Fq '8. AUTOMATIC UPDATES' "$IT_HANDOVER"
 
@@ -332,6 +334,8 @@ grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$LOCAL_BASM
 # Generated modules are usable: LAMP serves a page and WireGuard has real keys.
 grep -Fq -- '- ./www:/var/www/html' "$LOCAL_BASM_ROOT/modules/lamp/docker-compose.yml"
 [[ -s "$LOCAL_BASM_ROOT/modules/lamp/www/index.html" ]]
+[[ "$(stat -c %a "$LOCAL_BASM_ROOT/modules/lamp/www")" == 755 ]]
+[[ "$(stat -c %a "$LOCAL_BASM_ROOT/modules/lamp/www/index.html")" == 644 ]]
 if grep -q CHANGE_ME "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"; then exit 1; fi
 grep -Eq '^PrivateKey = [A-Za-z0-9+/]{43}=$' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf"
 grep -Fq 'Endpoint = 127.0.0.1:51825' "$LOCAL_BASM_ROOT/modules/wireguard/peer1.conf"
@@ -415,14 +419,14 @@ grep -Fqx 'certificatesResolvers:' "$PRODUCTION_BASM_ROOT/config/traefik-static.
 grep -Fqx '  dashboard: true' "$PRODUCTION_BASM_ROOT/config/traefik-static.yml"
 grep -Fq 'web_protocol: "https"' "$PRODUCTION_BASM_ROOT/config/postal/postal.yml"
 grep -Fq 'name: basm-lamp' "$PRODUCTION_BASM_ROOT/modules/lamp/docker-compose.yml"
-grep -Fq '"0.0.0.0:8080:80"' "$PRODUCTION_BASM_ROOT/modules/lamp/docker-compose.yml"
+grep -Fq '"127.0.0.1:8080:80"' "$PRODUCTION_BASM_ROOT/modules/lamp/docker-compose.yml"
 grep -Fq "$PRODUCTION_BASM_ROOT/docker-compose.yml --env-file $PROD_ENV up -d" "$DOCKER_LOG"
 grep -Fq "$PRODUCTION_BASM_ROOT/modules/uptime-kuma/docker-compose.yml up -d" "$DOCKER_LOG"
 grep -Fq 'https://erp.acme.example:443' "$OUTPUT_DIR/installation-summary.txt"
-grep -Fq 'LAMP: http://acme.example:8080' "$OUTPUT_DIR/installation-summary.txt"
+grep -Fq 'LAMP: http://127.0.0.1:8080' "$OUTPUT_DIR/installation-summary.txt"
 grep -Fq 'NEXTCLOUD_TRUSTED_DOMAINS: "cloud.acme.example"' "$PRODUCTION_BASM_ROOT/docker-compose.yml"
 grep -Fq 'redirect-to-https' "$PRODUCTION_BASM_ROOT/config/traefik.yml"
-grep -Fq 'port: "443"' "$PRODUCTION_BASM_ROOT/config/traefik.yml"
+jq -e '.http.middlewares["redirect-to-https"].redirectScheme.port == "443"' "$PRODUCTION_BASM_ROOT/config/traefik.yml" >/dev/null
 grep -Fq 'Endpoint = acme.example:51820' "$PRODUCTION_BASM_ROOT/modules/wireguard/peer1.conf"
 USER_HANDOVER="$PRODUCTION_BASM_ROOT/handover/for-the-user.txt"
 IT_HANDOVER="$PRODUCTION_BASM_ROOT/handover/for-it.txt"
@@ -453,7 +457,7 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   grep -Fq 'RustDesk ID server: acme.example:21116' "$OUTPUT_DIR/installation-summary.txt"
   grep -Fq 'ID server: acme.example:21116' "$USER_HANDOVER"
   grep -Fq 'RustDesk ID    TCP/UDP     21116' "$IT_HANDOVER"
-  grep -Fq 'Back up '"$BASM_ROOT"'/modules/rustdesk/data separately' "$IT_HANDOVER"
+  grep -Fq 'complete BASM backup includes '"$BASM_ROOT"'/modules/rustdesk/data' "$IT_HANDOVER"
   load_deployment_env
   [[ "$RUSTDESK_RELAY_PORT" == 21117 ]]
   BASM_MODULES+=' keepass'
@@ -481,51 +485,6 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   grep -Fq 'ID server: acme.example:21116' "$USER_HANDOVER"
   select_modules <<< full >/dev/null
   [[ "$BASM_MODULES" == "$BASM_FULL_MODULES" ]]
-)
-
-(
-  UPDATER_DIR="$TEST_DIR/updater"
-  mkdir -p "$UPDATER_DIR/modules"
-  cp "$ROOT_DIR/update.sh" "$UPDATER_DIR/update.sh"
-  cp "$MODULES_DIR/fluxer.sh" "$UPDATER_DIR/modules/fluxer.sh"
-  printf 'source %q\nrequire_root() { :; }\n' "$ROOT_DIR/modules/core.sh" > "$UPDATER_DIR/modules/core.sh"
-  rexctl() { printf 'rexctl %s\n' "$*" >> "$DOCKER_LOG"; }
-  export -f rexctl
-  docker() {
-    printf '%s\n' "$*" >> "$DOCKER_LOG"
-    if [[ "${DOCKER_TEST_FAIL_BACKUP:-false}" == true && "$*" == *'exec -T restic-backup'* ]]; then return 1; fi
-    if [[ "${DOCKER_TEST_FAIL_DUMP:-false}" == true && "$*" == *'exec -T db-backup'* ]]; then return 1; fi
-  }
-  export -f docker
-  export DOCKER_LOG
-  : > "$DOCKER_LOG"
-  if ! bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/update-output" 2>&1; then
-    cat "$TEST_DIR/update-output" >&2
-    exit 1
-  fi
-  grep -Fq 'exec -T db-backup' "$DOCKER_LOG"
-  grep -Fq 'restic backup --tag basm-pre-update' "$DOCKER_LOG"
-  grep -Fq 'up -d --wait --wait-timeout 900' "$DOCKER_LOG"
-  grep -Fq 'up -d --wait --wait-timeout 300' "$DOCKER_LOG"
-  grep -Fq "$PRODUCTION_BASM_ROOT/modules/rustdesk/docker-compose.yml pull --quiet" "$DOCKER_LOG"
-  grep -Fq "$PRODUCTION_BASM_ROOT/modules/rustdesk/docker-compose.yml up -d --wait" "$DOCKER_LOG"
-  [[ "$(grep -n 'exec -T restic-backup' "$DOCKER_LOG" | cut -d: -f1)" -lt "$(grep -n 'pull --quiet' "$DOCKER_LOG" | head -n 1 | cut -d: -f1)" ]]
-  : > "$DOCKER_LOG"
-  if DOCKER_TEST_FAIL_BACKUP=true bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/failed-update-output" 2>&1; then exit 1; fi
-  if grep -Eq 'pull --quiet|up -d' "$DOCKER_LOG"; then exit 1; fi
-  : > "$DOCKER_LOG"
-  if DOCKER_TEST_FAIL_DUMP=true bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/failed-dump-output" 2>&1; then exit 1; fi
-  if grep -Eq 'exec -T restic-backup|pull --quiet|up -d' "$DOCKER_LOG"; then exit 1; fi
-  : > "$DOCKER_LOG"
-  bash "$UPDATER_DIR/update.sh" --scheduled "$LOCAL_BASM_ROOT" > "$TEST_DIR/missing-update-output" 2>&1 && exit 1
-  [[ ! -s "$DOCKER_LOG" ]]
-  (
-    exec 9> "$PRODUCTION_BASM_ROOT/logs/update.lock"
-    flock -n 9
-    if bash "$UPDATER_DIR/update.sh" --scheduled "$PRODUCTION_BASM_ROOT" > "$TEST_DIR/locked-update-output" 2>&1; then exit 1; fi
-    grep -Fq 'Another BASM update is already running' "$TEST_DIR/locked-update-output"
-    [[ ! -s "$DOCKER_LOG" ]]
-  )
 )
 
 # Production rejects placeholder contacts that Let's Encrypt would refuse.

@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+source "$ROOT_DIR/modules/core.sh"
+if [[ "${1:-}" == --root ]]; then
+  [[ $# -ge 3 ]] || fail "Usage: basm [--root /opt/basm-local] COMMAND"
+  BASM_ROOT="$2"; shift 2
+fi
+ACTION="${1:-help}"
+[[ $# == 0 ]] || shift
+case "$ACTION" in
+  help|--help|-h)
+    cat <<'EOF'
+Usage: sudo basm [--root /opt/basm-local] COMMAND
+  status | check | logs [service | module[/service]] | start | stop
+  backup | snapshots | verify-backup | prune
+  restore SNAPSHOT_ID NEW_STAGING_DIRECTORY
+  recovery-kit EXTERNAL_DIRECTORY
+  update [--release TRUSTED_CHECKOUT]
+  alert-test
+EOF
+    exit 0 ;;
+  update)
+    exec /bin/bash "$ROOT_DIR/update.sh" --root "$BASM_ROOT" "$@" ;;
+esac
+require_root
+BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+load_deployment_env
+case "$ACTION" in
+  restore) [[ $# == 2 ]] || fail "restore requires a snapshot ID and new staging directory." ;;
+  recovery-kit) [[ $# == 1 ]] || fail "recovery-kit requires an external directory." ;;
+  logs) [[ $# -le 1 ]] || fail "logs accepts at most one service or module/service." ;;
+  status|check|start|stop|backup|snapshots|verify-backup|prune|alert-test)
+    [[ $# == 0 ]] || fail "$ACTION takes no arguments." ;;
+  *) fail "Unknown command: $ACTION" ;;
+esac
+acquire_operation_lock "$ACTION"
+install_operation_trap "$ACTION"
+case "$ACTION" in
+  status)
+    while IFS= read -r file; do stack_command "$file" ps --all; done < <(deployment_stacks)
+    [[ ! -f "$BASM_ROOT/logs/last-failure" ]] || cat "$BASM_ROOT/logs/last-failure" ;;
+  check) check_deployment ;;
+  logs)
+    if [[ $# == 1 && -f "$BASM_ROOT/modules/${1%%/*}/docker-compose.yml" ]]; then
+      file="$BASM_ROOT/modules/${1%%/*}/docker-compose.yml"
+      if [[ "$1" == */* ]]; then
+        service="${1#*/}"
+        module_compose "$file" config --services | grep -Fxq -- "$service" || fail "Unknown module service."
+        module_compose "$file" logs --tail 100 "$service"
+      else
+        module_compose "$file" logs --tail 100
+      fi
+    else
+      if [[ $# == 1 ]]; then
+        basm_stack config --services | grep -Fxq -- "$1" || fail "Unknown core service."
+      fi
+      basm_stack logs --tail 100 "$@"
+    fi ;;
+  start) start_stacks ;;
+  stop)
+    while IFS= read -r file; do stack_command "$file" stop --timeout 120; done < <(deployment_stacks) ;;
+  backup) backup_deployment; restic_command forget --host "$BASM_CONTAINER_PREFIX" --tag basm-v2 --group-by host,paths --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune ;;
+  snapshots) restic_command snapshots ;;
+  verify-backup) restic_command check --read-data ;;
+  prune) restic_command forget --host "$BASM_CONTAINER_PREFIX" --tag basm-v2 --group-by host,paths --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune ;;
+  restore) restore_deployment "$1" "$2" ;;
+  recovery-kit) recovery_kit "$1" ;;
+  alert-test) notify_failure "BASM test notification; no service failure." ;;
+esac

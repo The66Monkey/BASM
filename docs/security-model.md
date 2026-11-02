@@ -10,6 +10,7 @@
 - Postal's application signing secret remains 64 hexadecimal characters;
   cryptographic keys are not shortened by the password policy.
 - The DDNS API token, if used, is stored only in that file.
+- Saved environment files are parsed as data, without executing substitutions.
 - WireGuard keys and prepared WireGuard configs are secrets (`0600`) and are
   kept across reruns.
 - Postal's mounted config and signing key are readable by Postal's non-root
@@ -44,6 +45,9 @@ preserved when regenerating handovers.
   ports on a router.
 - Application containers are reachable only on the private Compose network.
 - BASM does not change SSH settings or configure firewalls or routers.
+- Production LAMP and Uptime Kuma default to loopback; explicitly configured
+  management addresses must be private IPv4. Existing modules change binding
+  only when their configuration is regenerated.
 - WireGuard only generates configuration; it does not start a VPN server.
 
 ## Backups and updates
@@ -51,9 +55,14 @@ preserved when regenerating handovers.
 - Restic repositories are encrypted. The default repository is on the host and
   does not protect against disk or host loss; an off-host copy is required.
 - Database dumps are root-only.
-- Automatic updates abort if the pre-update dump or snapshot fails, and use a
-  lock to prevent overlapping runs.
-- Updates do not patch Debian packages or move pinned application versions.
+- Both manual and automatic updates abort if their complete pre-update backup
+  fails. Installer actions and operator commands share a deployment lock.
+- Runtime images are digest-locked; compatible channels advance during updates,
+  while incompatible version transitions require explicit migration handling.
+- Updates do not patch Debian packages or fetch BASM source. Reviewed releases
+  and migration code run as root and must be trusted.
+- Optional failure webhooks receive only host, deployment path and a generic
+  failure message, never credentials or raw logs. Protect their URL file as `0600`.
 
 ## Production mail
 

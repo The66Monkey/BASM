@@ -1,0 +1,17 @@
+name: BASM checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y shellcheck jq gettext-base restic python3-yaml python3-pykeepass
+      - name: Validate configuration and operational failure paths
+        run: bash tests/run.sh

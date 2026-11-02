@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$ROOT_DIR/config"
@@ -12,6 +12,7 @@ BASM_ROOT="${BASM_ROOT:-/opt/basm}"
 mkdir -p "$OUTPUT_DIR"
 
 source "$MODULES_DIR/core.sh"
+BASM_ENTRYPOINT=true
 
 usage() {
   cat <<'EOF'
@@ -69,10 +70,13 @@ done
 
 require_root
 check_debian
+# shellcheck disable=SC2086
+ensure_packages $BASM_REQUIRED_PACKAGES
 
 case "$ACTION" in
   module)
     select_deployment
+    install_operation_trap "Module installation"
     load_deployment_env
     if [[ "$MODULE_NAME" == basm ]]; then
       run_module_install basm
@@ -83,6 +87,7 @@ case "$ACTION" in
     ;;
   full)
     select_deployment
+    install_operation_trap "Full-profile upgrade"
     load_deployment_env
     upgrade_to_full
     exit $?
@@ -94,6 +99,7 @@ case "$ACTION" in
 esac
 
 run_wizard
+install_operation_trap "Installation"
 configure_system
 install_selected_modules
 write_summary

@@ -36,6 +36,11 @@ The installer does the following:
 - Schedules encrypted daily database and file backups with Restic
 - Deploys the selected optional modules
 - Creates the post-installation summary
+- Installs the `basm` operator command, hourly checks and optional webhook support
+
+Production LAMP and Uptime Kuma bind to loopback by default. Use SSH tunnels or
+set `MANAGEMENT_BIND_ADDRESS` to a private LAN IPv4 before regenerating those
+modules. Their unencrypted administration ports must not be forwarded publicly.
 
 ## Port setup
 
@@ -218,10 +223,9 @@ image tag; moving to a new server release requires changing the image version
 in the module and regenerating its configuration. Uninstall deletes this data.
 Local-to-production promotion also creates a new identity; update client keys.
 
-BASM's automatic Restic job does not include optional module directories.
-Make a separate encrypted, off-host backup of the entire RustDesk data directory,
-stopping both services first for a consistent SQLite copy. Restore it before
-starting the services to retain the original server identity.
+BASM's complete nightly Restic backup includes the RustDesk data directory and
+stops both services for a consistent SQLite copy. Keep an independent off-host
+repository copy. Restore the saved identity before starting the services.
 
 ### Local maintenance
 

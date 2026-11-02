@@ -42,7 +42,7 @@ ensure_dir() {
 
 BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk"
 BASM_PREPARED_MODULES="lamp wireguard uptime-kuma rustdesk"
-BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux"
+BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux python3 python3-yaml jq restic"
 
 package_installed() {
   dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
@@ -97,13 +97,15 @@ module_compose_files() {
 module_compose() {
   local compose_file="$1" module_dir="${1%/docker-compose.yml}"
   shift
+  local -a image_lock=()
+  [[ ! -f "$module_dir/.basm-images.json" ]] || image_lock=(-f "$module_dir/.basm-images.json")
   if [[ -f "$module_dir/.env" && -f "$module_dir/docker-compose.proxy.yml" && -f "$module_dir/docker-compose.basm.yml" ]]; then
     basm_compose --env-file "$module_dir/.env" \
       -f "$compose_file" \
       -f "$module_dir/docker-compose.proxy.yml" \
-      -f "$module_dir/docker-compose.basm.yml" "$@"
+      -f "$module_dir/docker-compose.basm.yml" "${image_lock[@]}" "$@"
   else
-    basm_compose -f "$compose_file" "$@"
+    basm_compose -f "$compose_file" "${image_lock[@]}" "$@"
   fi
 }
 
@@ -180,7 +182,7 @@ sync_keepass() {
     "$ERP_ADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_USER" "$NEXTCLOUD_ADMIN_PASSWORD" "$ADMIN_EMAIL" \
     "$POSTAL_ADMIN_PASSWORD" "$DB_ROOT_PASSWORD" "$NEXTCLOUD_DB_PASSWORD" "$POSTAL_DB_PASSWORD" \
     "$POSTAL_RAILS_SECRET" "$RESTIC_PASSWORD" "$BACKUP_LOCATION" "${DESEC_TOKEN:-}" "${BASM_MODULES:-basm}" \
-    "$PRIMARY_DOMAIN" "$UPTIME_KUMA_PORT" | /usr/bin/python3 "$ROOT_DIR/templates/keepass-sync.py" "$BASM_ROOT"
+    "${MANAGEMENT_BIND_ADDRESS:-$BIND_ADDRESS}" "$UPTIME_KUMA_PORT" | /usr/bin/python3 "$ROOT_DIR/templates/keepass-sync.py" "$BASM_ROOT"
 }
 
 validate_domain() {
@@ -196,6 +198,9 @@ validate_desec_token() {
 }
 
 ensure_port_defaults() {
+  MANAGEMENT_BIND_ADDRESS="${MANAGEMENT_BIND_ADDRESS:-${BIND_ADDRESS:-127.0.0.1}}"
+  [[ "$MANAGEMENT_BIND_ADDRESS" != 0.0.0.0 ]] || MANAGEMENT_BIND_ADDRESS=127.0.0.1
+  validate_local_bind_address "$MANAGEMENT_BIND_ADDRESS" || fail "Management listeners require loopback or a private LAN IPv4."
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
   local default_fluxer_tcp=7881 default_fluxer_udp=7882
   local default_smtp=25
@@ -373,6 +378,7 @@ configure_local_mode() {
   DEPLOYMENT_MODE=local
   BIND_ADDRESS="${LOCAL_BIND_ADDRESS:-127.0.0.1}"
   validate_local_bind_address "$BIND_ADDRESS" || fail "Local mode requires 127.0.0.1 or a private IPv4 LAN address."
+  MANAGEMENT_BIND_ADDRESS="$BIND_ADDRESS"
   BASM_ROOT="${LOCAL_BASM_ROOT:-/opt/basm-local}"
   PRIMARY_DOMAIN=localhost
   if [[ "$BIND_ADDRESS" != 127.0.0.1 ]]; then PRIMARY_DOMAIN=basm.test; fi
@@ -386,7 +392,8 @@ configure_local_mode() {
 
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
-  local fluxer_entrypoint=websecure
+  local fluxer_entrypoint=websecure fluxer_domain=""
+  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
   local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS}'
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   export NEXTCLOUD_TRUSTED_DOMAINS="${CLOUD_URL:-}"
@@ -400,39 +407,17 @@ render_stack() {
   if module_selected fluxer; then
     FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
     export FLUXER_DOMAIN FLUXER_PROXY_PORT
+    fluxer_domain="$FLUXER_DOMAIN"
   fi
-  envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$BASM_ROOT/docker-compose.yml"
+  envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$destination/docker-compose.yml" || return
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
   envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
-    < "$proxy_template" > "$BASM_ROOT/config/traefik.yml"
-  if module_selected fluxer; then
-    if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
-    cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
-
-  routers:
-    fluxer:
-      rule: "Host(\`$FLUXER_DOMAIN\`)"
-      service: fluxer-service
-      entryPoints:
-        - $fluxer_entrypoint
-EOF
-    if [[ "$fluxer_entrypoint" == websecure ]]; then
-      cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
-      tls:
-        certResolver: letsencrypt
-EOF
-    fi
-    cat >> "$BASM_ROOT/config/traefik.yml" <<EOF
-
-  services:
-    fluxer-service:
-      loadBalancer:
-        servers:
-          - url: "http://host.docker.internal:$FLUXER_PROXY_PORT"
-EOF
-  fi
-  envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$BASM_ROOT/config/traefik-static.yml"
+    < "$proxy_template" |
+    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" \
+      > "$destination/config/traefik.yml" || return
+  envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$destination/config/traefik-static.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
-    cat >> "$BASM_ROOT/config/traefik-static.yml" <<EOF
+    cat >> "$destination/config/traefik-static.yml" <<EOF
 
 certificatesResolvers:
   letsencrypt:
@@ -445,16 +430,23 @@ EOF
 }
 
 render_postal_config() {
-  local postal_config_dir="$BASM_ROOT/config/postal"
+  local postal_config_dir="${BASM_RENDER_DIR:-$BASM_ROOT}/config/postal"
   ensure_dir "$postal_config_dir"
+  chmod 750 "$postal_config_dir" || return
   envsubst '${MAIL_URL} ${POSTAL_WEB_PROTOCOL} ${PRIMARY_DOMAIN} ${ADMIN_EMAIL} ${COMPANY_NAME} ${POSTAL_DB_PASSWORD} ${POSTAL_RAILS_SECRET}' \
-    < "$ROOT_DIR/templates/postal.yml" > "$postal_config_dir/postal.yml"
-  chmod 640 "$postal_config_dir/postal.yml"
+    < "$ROOT_DIR/templates/postal.yml" > "$postal_config_dir/postal.yml" || return
+  chmod 640 "$postal_config_dir/postal.yml" || return
   if [[ ! -f "$postal_config_dir/signing.key" ]]; then
-    openssl genrsa -out "$postal_config_dir/signing.key" 2048
+    if [[ -n "${BASM_RENDER_DIR:-}" ]]; then
+      [[ -f "$BASM_ROOT/config/postal/signing.key" ]] || fail "Saved Postal signing key is missing."
+      cp "$BASM_ROOT/config/postal/signing.key" "$postal_config_dir/signing.key" || return
+    else
+      openssl genrsa -out "$postal_config_dir/signing.key" 2048 || return
+    fi
   fi
   chmod 640 "$postal_config_dir/signing.key"
   if [[ "$EUID" -eq 0 ]]; then
+    chown root:999 "$postal_config_dir" || return
     chown 999:999 "$postal_config_dir/postal.yml" "$postal_config_dir/signing.key"
   fi
 }
@@ -501,10 +493,11 @@ select_deployment() {
     BASM_ROOT="${LOCAL_BASM_ROOT:-/opt/basm-local}"
   fi
   BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]]; then acquire_operation_lock; fi
   if [[ -f "$BASM_ENV_FILE" ]]; then
-    set -a
-    source "$BASM_ENV_FILE"
-    set +a
+    local selected_root="$BASM_ROOT"
+    read_deployment_settings
+    [[ "$BASM_ROOT" == "$selected_root" ]] || fail "Saved deployment path does not match the selected installation."
   fi
   if [[ "$LOCAL_MODE" == false ]]; then
     if [[ "${PRIMARY_DOMAIN:-}" != "$domain" ]]; then
@@ -597,6 +590,7 @@ write_env_file() {
   cat > "$BASM_ENV_FILE" <<EOF
 DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
 BIND_ADDRESS="$BIND_ADDRESS"
+MANAGEMENT_BIND_ADDRESS="$MANAGEMENT_BIND_ADDRESS"
 BASM_CONTAINER_PREFIX="$BASM_CONTAINER_PREFIX"
 PORT_PROFILE="$PORT_PROFILE"
 COMPANY_NAME="$COMPANY_NAME"
@@ -730,8 +724,19 @@ run_wizard() {
 
   write_env_file
 
-  source "$BASM_ENV_FILE"
+  read_deployment_settings
   export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
+}
+
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    if [[ ! -f /etc/apt/sources.list.d/docker.list ]]; then
+      install -m 0755 -d /etc/apt/keyrings || return
+      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || return
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list || return
+    fi
+    ensure_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return
+  fi
 }
 
 configure_system() {
@@ -756,14 +761,7 @@ configure_system() {
   # shellcheck disable=SC2086
   ensure_packages $BASM_REQUIRED_PACKAGES
 
-  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-    if [[ ! -f /etc/apt/sources.list.d/docker.list ]]; then
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
-    fi
-    ensure_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  fi
+  ensure_docker || fail "Could not install Docker."
 
   ensure_dir "$BASM_ROOT"
   ensure_dir "$BASM_ROOT/config"
@@ -774,11 +772,16 @@ configure_system() {
   ensure_dir "$BACKUP_LOCATION"
   ensure_dir "$BACKUP_LOCATION/restic"
   ensure_dir "$OUTPUT_DIR"
-  cp "$ROOT_DIR/templates/erpnext-create-site.sh" "$BASM_ROOT/config/erpnext-create-site.sh"
-  chmod 755 "$BASM_ROOT/config/erpnext-create-site.sh"
-
-  render_stack
-  render_postal_config
+  if [[ "${BASM_ENTRYPOINT:-false}" == true && -f "$BASM_ROOT/docker-compose.yml" ]]; then
+    initialize_repository || fail "Could not open the existing backup repository."
+    install_runtime || fail "Could not install operator tools."
+    update_deployment "$ROOT_DIR" || fail "Existing deployment update failed; installation stopped."
+  else
+    cp "$ROOT_DIR/templates/erpnext-create-site.sh" "$BASM_ROOT/config/erpnext-create-site.sh"
+    chmod 755 "$BASM_ROOT/config/erpnext-create-site.sh"
+  fi
+  render_stack || fail "Cannot render the BASM stack."
+  render_postal_config || fail "Cannot render Postal configuration."
   prepare_full_profile
 
   log "System setup complete"
@@ -810,6 +813,10 @@ install_selected_modules() {
   done
   install_auto_updates
   install_ddns_updater
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]]; then
+    initialize_repository || fail "Could not initialize the backup repository."
+    backup_deployment || fail "Initial complete backup failed."
+  fi
 }
 
 update_cron_file() {
@@ -823,76 +830,6 @@ fluxer_backup_cron_file() {
   identifier="$(printf '%s' "$1" | sha256sum | cut -c1-16)"
   printf '%s/basm-fluxer-backup-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
 }
-
-install_auto_updates() (
-  umask 077
-  local maintenance_dir="$BASM_ROOT/maintenance" cron_file fluxer_backup_cron
-  ensure_packages cron util-linux
-  validate_backup_path "$BASM_ROOT" || fail "Deployment path is not safe for cron."
-  [[ "$BASM_ROOT" != *%* ]] || fail "Deployment path cannot contain a percent sign."
-  cron_file="$(update_cron_file "$BASM_ROOT")"
-  fluxer_backup_cron="$(fluxer_backup_cron_file "$BASM_ROOT")"
-  install -d -m 700 "$maintenance_dir" "$maintenance_dir/modules" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
-  install -m 700 "$ROOT_DIR/update.sh" "$maintenance_dir/update.sh" || fail "Cannot install updater."
-  install -m 600 "$ROOT_DIR/modules/core.sh" "$maintenance_dir/modules/core.sh" || fail "Cannot install updater helpers."
-  if module_selected fluxer; then
-    install -m 600 "$ROOT_DIR/modules/fluxer.sh" "$maintenance_dir/modules/fluxer.sh" || fail "Cannot install Fluxer updater helper."
-  fi
-  cat > "$maintenance_dir/run-updates.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-umask 077
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-if [[ -e "$BASM_ROOT/config/disable-auto-updates" ]]; then exit 0; fi
-exec >> "$BASM_ROOT/logs/automatic-updates.log" 2>&1
-printf '\\nScheduled BASM update started at %s\\n' "\$(date -Is)"
-exec /bin/bash "$maintenance_dir/update.sh" --scheduled "$BASM_ROOT"
-EOF
-  chmod 700 "$maintenance_dir/run-updates.sh" || fail "Cannot protect update launcher."
-  mkdir -p "$(dirname "$cron_file")" || fail "Cannot create cron directory."
-  cat > "$cron_file" <<EOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 3 1 1,7 * root /bin/bash "$maintenance_dir/run-updates.sh"
-EOF
-  chmod 644 "$cron_file" || fail "Cannot set cron permissions."
-  if module_selected fluxer; then
-    cat > "$maintenance_dir/run-fluxer-backup.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-umask 077
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-BASM_ROOT="$BASM_ROOT"
-BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
-exec >> "$BASM_ROOT/logs/fluxer-backup.log" 2>&1
-exec 9> "$BASM_ROOT/logs/update.lock"
-flock -n 9 || exit 0
-source "$maintenance_dir/modules/core.sh"
-load_deployment_env
-source "$maintenance_dir/modules/fluxer.sh"
-module_backup
-for attempt in {1..5}; do
-  if basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ENV_FILE" \\
-    exec -T restic-backup restic backup /source/fluxer-backups; then
-    exit 0
-  fi
-  /bin/sleep 30
-done
-fail "Could not add the Fluxer archive to the encrypted Restic repository."
-EOF
-    chmod 700 "$maintenance_dir/run-fluxer-backup.sh" || fail "Cannot protect Fluxer backup launcher."
-    cat > "$fluxer_backup_cron" <<EOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-30 2 * * * root /bin/bash "$maintenance_dir/run-fluxer-backup.sh"
-EOF
-    chmod 644 "$fluxer_backup_cron" || fail "Cannot set Fluxer backup cron permissions."
-  else
-    rm -f "$fluxer_backup_cron" "$maintenance_dir/run-fluxer-backup.sh"
-  fi
-  systemctl enable --now cron || fail "Cannot enable the automatic update scheduler."
-  log "Automatic application updates scheduled for January 1 and July 1 at 03:00 (server time)."
-)
 
 ddns_cron_file() {
   local identifier
@@ -910,6 +847,7 @@ install_ddns_updater() (
     return 0
   fi
   [[ "$BASM_ROOT" != *%* ]] || fail "Deployment path cannot contain a percent sign."
+  install_runtime || fail "Cannot install the DNS maintenance helpers."
   install -d -m 700 "$maintenance_dir" "$BASM_ROOT/logs" || fail "Cannot create maintenance directories."
   install -m 700 "$ROOT_DIR/templates/ddns-update.sh" "$maintenance_dir/ddns-update.sh" || fail "Cannot install the deSEC DNS updater."
   mkdir -p "$(dirname "$cron_file")" || fail "Cannot create cron directory."
@@ -967,10 +905,16 @@ run_module_update() {
 }
 
 load_deployment_env() {
+  local selected_root="$BASM_ROOT"
   [[ -f "$BASM_ENV_FILE" ]] || fail "No BASM configuration was found at $BASM_ENV_FILE. Run the full installer for this environment first."
-  set -a
-  source "$BASM_ENV_FILE"
-  set +a
+  read_deployment_settings
+  [[ "${1:-}" == --recovery || "$BASM_ROOT" == "$selected_root" ]] ||
+    fail "Saved deployment path does not match the selected installation."
+  validate_backup_path "$BASM_ROOT" && [[ "$BASM_ROOT" != / ]] || fail "Invalid BASM deployment path."
+  validate_backup_path "$BACKUP_LOCATION" || fail "Invalid backup destination."
+  [[ "$(realpath -m "$BASM_ROOT")" == "$BASM_ROOT" && "$(realpath -m "$BACKUP_LOCATION")" == "$BACKUP_LOCATION" ]] ||
+    fail "Deployment and backup paths must be canonical, without symlinks."
+  case "$BASM_ROOT/" in "$BACKUP_LOCATION/"*) fail "Backups cannot contain the live deployment." ;; esac
   if [[ "${LOCAL_MODE:-false}" == true ]]; then
     [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "Expected a local environment configuration."
     validate_local_bind_address "$BIND_ADDRESS" || fail "Unsafe local bind address."
@@ -1018,8 +962,17 @@ upgrade_modules() {
       fail "Vaultwarden is deprecated for new installs. Select KeePassXC instead."
     fi
     [[ -f "$MODULES_DIR/$module_name.sh" ]] || fail "Unknown module: $module_name"
+    if [[ "${DEPLOYMENT_MODE:-production}" == local && "$module_name" == fluxer ]]; then
+      fail "Fluxer requires production HTTPS and cannot be selected in local mode."
+    fi
     module_selected "$module_name" || added+=("$module_name")
   done
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]] &&
+      grep -Eq '^  (db-backup|restic-backup):' "$BASM_ROOT/docker-compose.yml"; then
+    initialize_repository || fail "Could not open the existing backup repository."
+    install_runtime || fail "Could not install operator tools."
+    update_deployment "$ROOT_DIR" || fail "Existing deployment update failed; module installation stopped."
+  fi
   add_modules_to_selection "$@"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
@@ -1057,8 +1010,15 @@ upgrade_modules() {
     [[ "$module_name" == basm ]] && continue
     run_module_install "$module_name" || fail "Module '$module_name' failed to install."
   done
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]]; then
+    refresh_routes || fail "Could not refresh module routes."
+    basm_stack restart traefik || fail "Could not reload module routes."
+  fi
   install_auto_updates
   install_ddns_updater
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]]; then
+    backup_deployment || fail "Post-install module backup failed."
+  fi
   write_summary
   log "Installed modules: $BASM_MODULES"
 }
@@ -1075,9 +1035,8 @@ upgrade_to_full() {
 run_module_action_for_root() (
   local root="$1" module_name="$2" action="$3" action_function
   [[ -f "$root/config/basm.env" ]] || return 0
-  set -a
-  source "$root/config/basm.env"
-  set +a
+  BASM_ENV_FILE="$root/config/basm.env"
+  read_deployment_settings
   BASM_ROOT="$root"
   module_selected "$module_name" || return 0
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$module_name.sh"
@@ -1104,7 +1063,7 @@ start_deployment() {
   local root="$1" compose_file
   command -v docker >/dev/null 2>&1 || return 0
   if [[ -f "$root/docker-compose.yml" ]]; then
-    basm_compose -f "$root/docker-compose.yml" --env-file "$root/config/basm.env" up -d --remove-orphans || warn "Could not restart the core stack at $root"
+    BASM_ROOT="$root" BASM_ENV_FILE="$root/config/basm.env" basm_stack up -d --remove-orphans || warn "Could not restart the core stack at $root"
   fi
   while IFS= read -r compose_file; do
     [[ "$(basename "$(dirname "$compose_file")")" == fluxer ]] && continue
@@ -1119,7 +1078,7 @@ start_deployment() {
 purge_deployment() {
   local root="$1" compose_file
   [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
-  rm -f "$(update_cron_file "$root")" "$(ddns_cron_file "$root")" "$(fluxer_backup_cron_file "$root")"
+  rm -f "$(update_cron_file "$root")" "$(backup_cron_file "$root")" "$(check_cron_file "$root")" "$(ddns_cron_file "$root")" "$(fluxer_backup_cron_file "$root")"
   run_module_action_for_root "$root" fluxer uninstall || fail "Could not remove Fluxer at $root; deployment data was kept."
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
@@ -1143,12 +1102,17 @@ promote_to_production() {
   local domain="" answer local_backup variable
 
   [[ -f "$local_root/config/basm.env" ]] || fail "No local BASM installation was found at $local_root."
+  if [[ "${BASM_ENTRYPOINT:-false}" == true ]]; then
+    BASM_ROOT="$local_root"
+    acquire_operation_lock
+    exec 8>&9
+    unset BASM_LOCK_ROOT
+  fi
   if [[ -f "$production_root/docker-compose.yml" ]]; then
     fail "A production stack already exists at $production_root. Use ./update.sh or uninstall it before promoting."
   fi
-  set -a
-  source "$local_root/config/basm.env"
-  set +a
+  BASM_ENV_FILE="$local_root/config/basm.env"
+  read_deployment_settings
   [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "$local_root does not contain a local test configuration."
   local_backup="${BACKUP_LOCATION:-$local_root/backups}"
 
@@ -1207,8 +1171,8 @@ port_summary() {
   if [[ "$host" == 0.0.0.0 ]]; then host="$PRIMARY_DOMAIN"; fi
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
-      lamp) printf 'LAMP: http://%s:%s\n' "$host" "$LAMP_PORT" ;;
-      uptime-kuma) printf 'Uptime Kuma: http://%s:%s\n' "$host" "$UPTIME_KUMA_PORT" ;;
+      lamp) printf 'LAMP: http://%s:%s (private management listener)\n' "${MANAGEMENT_BIND_ADDRESS:-$host}" "$LAMP_PORT" ;;
+      uptime-kuma) printf 'Uptime Kuma: http://%s:%s (private management listener)\n' "${MANAGEMENT_BIND_ADDRESS:-$host}" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
       rustdesk)
         printf 'RustDesk ID server: %s:%s (TCP/UDP); NAT test: %s/tcp\n' "$host" "$RUSTDESK_ID_PORT" "$RUSTDESK_NAT_PORT"
@@ -1431,7 +1395,8 @@ OTHER ACCOUNTS
 EOF
   if module_selected uptime-kuma; then
     cat >> "$handover_dir/for-the-user.txt" <<EOF
-Monitoring (Uptime Kuma): http://$PRIMARY_DOMAIN:$UPTIME_KUMA_PORT
+Monitoring (Uptime Kuma): http://$MANAGEMENT_BIND_ADDRESS:$UPTIME_KUMA_PORT
+Loopback addresses require an IT-provided SSH tunnel when using another computer.
 No account is generated. IT must complete first-time setup on the private
 network and record the chosen username and password in your password manager.
 EOF
@@ -1444,7 +1409,7 @@ IT must record its login details securely and create named accounts for users.
 EOF
   fi
   if module_selected lamp; then
-    printf 'Website (LAMP): http://%s:%s - no login is created.\n' "$PRIMARY_DOMAIN" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
+    printf 'Website (LAMP): http://%s:%s - private listener; no login is created.\n' "$MANAGEMENT_BIND_ADDRESS" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
   fi
   if module_selected wireguard; then
     cat >> "$handover_dir/for-the-user.txt" <<EOF
@@ -1463,7 +1428,8 @@ BASM attempts application updates on January 1 and July 1 at 03:00, according
 to the server's clock. Leave the server on. Services may briefly be unavailable.
 IT should check the update log afterward and handle urgent security fixes sooner.
 Ask IT to disable this schedule if your business requires approved manual updates.
-Version-pinned applications still need IT review for newer releases.
+Compatible application channels are refreshed automatically; major releases
+and exact-version pins still need IT review.
 
 BACKUPS AND RECOVERY (FOR YOUR IT HELPER)
 Daily encrypted backups: $BACKUP_LOCATION/restic
@@ -1648,9 +1614,8 @@ Configure clients using the ID/relay endpoints in the user document and the
 contents of $BASM_ROOT/modules/rustdesk/data/id_ed25519.pub (after first start).
 Keep WebSocket ports 21118/21119 closed; this setup supports desktop clients.
 Test registration and a forced-relay session between two client devices.
-Back up $BASM_ROOT/modules/rustdesk/data separately, with the services stopped
-for a consistent database copy. BASM's automatic Restic job does not include
-optional module directories. Protect id_ed25519 (private key); never share it.
+The complete BASM backup includes $BASM_ROOT/modules/rustdesk/data with the
+services stopped for consistency. Protect id_ed25519 (private key); never share it.
 Reruns preserve this directory; uninstall and local-to-production promotion
 delete it. Promotion generates a new key, so reconfigure clients afterwards.
 EOF
@@ -1658,9 +1623,10 @@ EOF
   cat >> "$handover_dir/for-it.txt" <<EOF
 
 6. CHECK BEFORE LEAVING
-From the BASM checkout, inspect the services:
-  sudo docker compose --env-file "$BASM_ROOT/config/basm.env" -f "$BASM_ROOT/docker-compose.yml" ps -a
-  sudo docker compose --env-file "$BASM_ROOT/config/basm.env" -f "$BASM_ROOT/docker-compose.yml" logs --tail=100
+Inspect the services with the installed operator tools:
+  sudo basm --root "$BASM_ROOT" status
+  sudo basm --root "$BASM_ROOT" check
+  sudo basm --root "$BASM_ROOT" logs
 One-shot initializer containers should exit successfully (code 0). Investigate
 unhealthy containers, restart loops, and nonzero exits before handing over.
 Open each service URL and actually sign in. In production, test public URLs
@@ -1690,20 +1656,23 @@ Installed updater: $BASM_ROOT/maintenance/update.sh
 Schedule: January 1 and July 1 at 03:00, server time (cron; server must be on).
 Cron file: $(update_cron_file "$BASM_ROOT")
 Log: $BASM_ROOT/logs/automatic-updates.log
-The scheduled run requires fresh database dumps and an encrypted Restic snapshot
-before pulling images. It stops on errors and waits for running/healthy services.
-There is no automatic rollback or external failure notification. Review the log
-after each run and verify the owner can sign in. Missed runs are not caught up.
-This only pulls configured image tags; it does not upgrade Debian, BASM source,
-or version pins. Review pinned applications and apply urgent fixes separately.
+Both scheduled and manual updates require fresh database dumps and a complete
+encrypted snapshot before applying images. Apps pause briefly for consistency.
+Images are resolved to immutable digests; Nextcloud and database major changes
+are gated. An interrupted update blocks retries until repaired.
+There is no automatic rollback. Failures are recorded locally; configure the
+optional HTTPS webhook in config/alert-webhook for external notifications.
+Missed cron runs are not replayed. Scheduled updates refuse daytime execution
+(06:00-24:00). They do not upgrade Debian packages or fetch new BASM releases.
+Review major releases and exact-version pins; apply urgent fixes separately.
 To disable automatic runs persistently:
   sudo touch "$BASM_ROOT/config/disable-auto-updates"
 To re-enable them:
   sudo rm "$BASM_ROOT/config/disable-auto-updates"
 For quarterly runs, edit the cron month field from 1,7 to 1,4,7,10. Installer
 reruns restore the six-month schedule but keep the disable file if present.
-Manual updates: sudo ./update.sh (from the checkout, after confirming a usable
-backup; manual runs do not create the scheduled pre-update snapshot).
+Manual updates: sudo basm --root "$BASM_ROOT" update
+Manual updates also create their own complete pre-update snapshot.
 Troubleshooting: docs/troubleshooting.md in the checkout.
 EOF
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
@@ -1822,3 +1791,5 @@ EOF
 
   log "Summary written to $summary_file"
 }
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/operations.sh"

@@ -7,12 +7,14 @@ module_install() {
   log "Installing LAMP module"
   ensure_port_defaults
   ensure_dir "$module_dir/www" || return
+  chmod 755 "$module_dir/www" || return
   if [[ -z "$(ls -A "$module_dir/www")" ]]; then
     cat > "$module_dir/www/index.html" <<HTML || return
 <!doctype html>
 <title>${COMPANY_NAME:-BASM}</title>
 <p>The BASM LAMP module is running. Replace the files in $BASM_ROOT/modules/lamp/www with your site.</p>
 HTML
+    chmod 644 "$module_dir/www/index.html" || return
   fi
   cat > "$module_dir/docker-compose.yml" <<EOT || return
 name: ${BASM_CONTAINER_PREFIX:-basm}-lamp
@@ -21,7 +23,7 @@ services:
     image: php:8.3-apache
     container_name: ${BASM_CONTAINER_PREFIX:-basm}-lamp
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:$LAMP_PORT:80"
+      - "$MANAGEMENT_BIND_ADDRESS:$LAMP_PORT:80"
     environment:
       APP_ENV: ${DEPLOYMENT_MODE:-production}
     volumes:

@@ -15,7 +15,7 @@ services:
     container_name: ${BASM_CONTAINER_PREFIX:-basm}-uptime-kuma
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:$UPTIME_KUMA_PORT:3001"
+      - "$MANAGEMENT_BIND_ADDRESS:$UPTIME_KUMA_PORT:3001"
     volumes:
       - ./data:/app/data
 EOF

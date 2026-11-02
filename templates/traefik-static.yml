@@ -8,5 +8,6 @@ providers:
     filename: "/etc/traefik/dynamic.yml"
 log:
   level: INFO
+ping: {}
 api:
   dashboard: true

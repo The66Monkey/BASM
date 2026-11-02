@@ -17,13 +17,14 @@ LOCAL_BASM_ROOT="$BASM_ROOT"
 if [[ "$LOCAL_BASM_ROOT" == /opt/basm ]]; then LOCAL_BASM_ROOT=/opt/basm-local; fi
 
 source "$ROOT_DIR/modules/core.sh"
+BASM_ENTRYPOINT=true
 
 require_root
 select_deployment
 
 if [[ "$LOCAL_MODE" == true ]]; then
   [[ -f "$BASM_ROOT/config/basm.env" ]] || fail "No local BASM configuration was found at $BASM_ROOT"
-  source "$BASM_ROOT/config/basm.env"
+  load_deployment_env
   [[ "${DEPLOYMENT_MODE:-}" == local ]] || fail "The selected configuration is not a local test setup."
 fi
 

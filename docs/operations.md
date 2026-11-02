@@ -40,24 +40,29 @@ problems on a dynamic IP.
 
 The updater runs as root at **03:00 on January 1 and July 1** using the server's
 clock. Missed runs are not caught up, and updates can briefly interrupt
-services. Before changing applications it dumps all three databases and creates
-an encrypted Restic snapshot; if either fails it stops. Failures are logged,
-with no automatic rollback or external notification.
+services. Scheduled execution is restricted to 00:00-06:00; it will not replay a
+missed run during business hours. Manual updates are explicitly operator-triggered.
+If the nightly backup still holds the lock, scheduled updates wait up to two
+hours and recheck the maintenance window before starting.
 
-It updates images within their configured tags only: not Debian packages, the
-BASM checkout, or version-pinned applications. Pinned versions need periodic
-IT review. Six-month updates are not a substitute for urgent security fixes.
+Both manual and scheduled updates resolve compatible image channels, take a
+complete consistent backup, and apply digest-locked images. Nextcloud cannot
+skip major releases or downgrade. Database-series changes require a tested
+release migration, as do ERPNext major changes. ERPNext runs its site migration
+before dependent applications start. A failed/interrupted application step leaves
+`config/update-in-progress` and blocks retries; there is no automatic rollback.
 
-When Fluxer is selected, the BASM updater also calls Fluxer's `rexctl upgrade`;
-Fluxer manages its own release and takes its own pre-upgrade backup. Scheduled
-BASM updates archive Fluxer before the encrypted pre-update Restic snapshot.
+Nextcloud 33, ERPNext 16, Traefik 3 and the configured MariaDB/Redis series can
+receive compatible channel updates. Exact-version pins, including Postal, need
+reviewed BASM releases to advance. Neither Debian packages nor BASM source are
+automatically upgraded. Six-month updates do not replace urgent security fixes.
 
-Logs: `<BASM_ROOT>/logs/automatic-updates.log`.
+Fluxer uses its own `rexctl upgrade` with upstream migration/backup handling;
+the complete BASM backup includes a Fluxer archive before any update.
 
-Fluxer also uses its upstream `rexctl` manager. BASM archives Fluxer daily at
-02:30 and includes that archive in Restic; scheduled BASM upgrades create an
-additional pre-update archive. Check `<BASM_ROOT>/logs/fluxer-backup.log` for
-the daily job.
+Logs: `<BASM_ROOT>/logs/automatic-updates.log`. Daily complete backups run at
+02:00 and log to `logs/backup.log`; the old independent backup-container loops
+and separate Fluxer cron job are replaced.
 
 Disable automatic runs (survives installer reruns); remove the file to re-enable:
 
@@ -69,9 +74,42 @@ For quarterly runs, change the cron month field from `1,7` to `1,4,7,10` in
 this deployment's file under `/etc/cron.d/`; installer reruns restore the
 six-month schedule.
 
-For an immediate manual update after confirming a usable backup, run
-`sudo ./update.sh` from the checkout. Manual runs share the overlap lock but do
-not create the pre-update snapshot.
+For an immediate manual update, run `sudo basm update`. To apply a reviewed BASM
+checkout, use `sudo basm update --release /path/to/checkout`. Never use an
+untrusted checkout: release code and migrations run as root. The checkout needs
+a numeric `VERSION`; downgrades are rejected. All mutating operator commands and
+installer actions share the deployment lock.
+
+## Checks and failure notifications
+
+```sh
+sudo basm status
+sudo basm check
+sudo basm logs nextcloud
+```
+
+Use `--root /opt/basm-local` before the command for local mode. Hourly checks
+validate expected containers (including successful initializers), web endpoints,
+Fluxer when selected, backup age (under 36 hours), and filesystem usage (under
+90%). Checks defer explicitly during maintenance. WireGuard configuration is
+checked when selected, but BASM does not claim that a manually enabled host VPN
+is healthy.
+
+Failures are recorded in the system journal and `logs/last-failure`. For optional
+external notifications, place one HTTPS endpoint URL in
+`config/alert-webhook` with mode `0600`. The receiver gets JSON containing
+`host`, `deployment`, and `message`; no credentials or command output are sent.
+Test with `sudo basm alert-test`. Delivery failures are logged and do not hide
+the original failure. No webhook is contacted unless configured.
+
+## Private management services
+
+Production LAMP and Uptime Kuma bind to loopback by default, not the public
+wildcard address. Access them with SSH tunnels, or save a private LAN IPv4 as
+`MANAGEMENT_BIND_ADDRESS` in `config/basm.env` and rerun their module installers.
+Local-mode modules follow the selected private bind address. Existing modules
+keep their binding until regenerated; review them during adoption. BASM does
+not replace an administrator's firewall/router policy.
 
 ## Upgrading and promoting
 

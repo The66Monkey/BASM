@@ -65,9 +65,6 @@ module_install() {
     fail "Could not configure the Fluxer backup location."
   fluxer_rexctl backup keep 7 || fail "Could not configure Fluxer backup retention."
   fluxer_rexctl backup || fail "Could not create the initial Fluxer backup."
-  basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" \
-    exec -T restic-backup restic backup /source/fluxer-backups || \
-    fail "Could not add the initial Fluxer backup to Restic."
   log "Fluxer module installed at https://$FLUXER_DOMAIN"
 }
 

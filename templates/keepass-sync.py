@@ -63,7 +63,7 @@ def sync(root, values):
         if values["DESEC_TOKEN"]:
             add("deSEC API token", password=values["DESEC_TOKEN"], url="https://desec.io/")
         if "uptime-kuma" in values["BASM_MODULES"].split():
-            add("Uptime Kuma administrator", url=f'http://{values["PRIMARY_DOMAIN"]}:{values["UPTIME_KUMA_PORT"]}', notes="Record the account created during first-time setup here. BASM cannot discover its password.")
+            add("Uptime Kuma administrator", url=f'http://{values["MANAGEMENT_BIND_ADDRESS"]}:{values["UPTIME_KUMA_PORT"]}', notes="Private listener; use an SSH tunnel for loopback access from another computer. Record the account created during first-time setup here. BASM cannot discover its password.")
         for title in ("Server administrator", "Router administrator", "Domain provider", "Internet provider", "Off-site backups"):
             add(title, notes="Ask IT to record the existing account here; BASM does not know these credentials.")
         attachments = [("Postal signing key", config / "postal" / "signing.key")]
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         "ERP_ADMIN_PASSWORD", "NEXTCLOUD_ADMIN_USER", "NEXTCLOUD_ADMIN_PASSWORD", "ADMIN_EMAIL",
         "POSTAL_ADMIN_PASSWORD", "DB_ROOT_PASSWORD", "NEXTCLOUD_DB_PASSWORD", "POSTAL_DB_PASSWORD",
         "POSTAL_RAILS_SECRET", "RESTIC_PASSWORD", "BACKUP_LOCATION", "DESEC_TOKEN", "BASM_MODULES",
-        "PRIMARY_DOMAIN", "UPTIME_KUMA_PORT",
+        "MANAGEMENT_BIND_ADDRESS", "UPTIME_KUMA_PORT",
     )
     try:
         fields = sys.stdin.buffer.read().decode().split("\0")

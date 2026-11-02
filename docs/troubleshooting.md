@@ -33,6 +33,21 @@ The wizard warns before continuing. If a service still fails, check which progra
 ## Backup issues
 
 - check `/var/backups/basm/restic` or `/opt/basm-local/backups/restic`
-- verify snapshots with `docker compose exec restic-backup restic snapshots`
+- verify complete snapshots with `sudo basm snapshots` and `sudo basm verify-backup`
 - confirm the database dump files exist under `/opt/basm/data/db-backups`
-- validate that the backup service can read the data paths
+- read `/opt/basm/logs/backup.log` and run `sudo basm check`
+- check that the configured backup filesystem is mounted; a changed identity
+  is an error, not a reason to delete the repository or its saved identity
+
+## Interrupted update
+
+Read `logs/automatic-updates.log`, `logs/last-failure`, and application logs.
+`config/update-in-progress` deliberately blocks unsafe retries. Do not remove
+it to force a retry or downgrade images over migrated databases. Preserve data
+and use the pre-update snapshot with the [recovery procedure](backup.md).
+
+## Management service unavailable from the LAN
+
+New production LAMP and Uptime Kuma listeners are loopback-only by default.
+Use an SSH tunnel or explicitly configure a private `MANAGEMENT_BIND_ADDRESS`
+and regenerate that module. Do not expose these HTTP ports publicly.

@@ -1,31 +1,67 @@
-# Backup Strategy
+# Backup and Recovery
 
-BASM runs a Restic container that initializes an encrypted repository and snapshots application files, configuration, and scheduled MariaDB dumps once per day. When Fluxer is selected, a separate 02:30 job creates a Fluxer `rexctl` archive and immediately adds it to the encrypted Restic repository. The archive directory is `<BACKUP_LOCATION>/fluxer`; Fluxer also creates an archive before its own upgrades. The default repository is `/var/backups/basm/restic` in production and `/opt/basm-local/backups/restic` in local mode. The repository password is stored in the root-only `config/basm.env` file under the BASM data root.
+At **02:00 server time**, BASM briefly pauses applications, takes fresh database
+dumps, stops databases, and creates one encrypted Restic snapshot. Previously
+running services are restarted even if the backup fails. Updates use the same
+backup procedure. Allow a maintenance window proportional to your data size.
 
-## Backup verification and recovery
+Snapshots cover the whole deployment: application files, cold database data,
+logical dumps, configuration, credentials, handovers, installed maintenance
+code, and every optional module. Fluxer's upstream archive and manager are
+saved inside the deployment too. Docker image digests are recorded so recovery
+does not silently install newer images. Logs and the backup repository are excluded.
+External data linked by symlinks is not followed; keep supported data beneath
+the deployment root or arrange its backup explicitly.
 
-1. Verify the daily snapshot with `docker compose -f /opt/basm/docker-compose.yml exec restic-backup restic snapshots`.
-2. Copy the repository (by default `/var/backups/basm/restic` or `/opt/basm-local/backups/restic`) to external storage before any disaster scenario occurs.
-3. Test recovery with `docker compose exec restic-backup restic restore <snapshot-id> --target /tmp/test-restore` and verify the recovered files.
+The default repository is `/var/backups/basm/restic` (local mode:
+`/opt/basm-local/backups/restic`). A local copy alone does not protect against
+disk loss or theft. Keep an independent encrypted off-host copy and the Restic
+password from `config/basm.env`. The backup filesystem identity is recorded;
+a missing or changed mount stops the job instead of writing onto the OS disk.
 
-## Example preservation approach
+## Routine commands
 
-- Data: `/opt/basm/data`
-- Global configuration and secrets: `/opt/basm/config`
-- Database dumps: `/opt/basm/data/db-backups`
-- Fluxer data, PostgreSQL dumps, and setup secrets: `/opt/basm/data/fluxer` and `/opt/basm/modules/fluxer/.env`
-- Backups: `/var/backups/basm/restic`
-- External copy: USB drive, NAS, or remote object storage
+```sh
+sudo basm backup
+sudo basm snapshots
+sudo basm verify-backup
+sudo basm restore SNAPSHOT_ID /srv/basm-restore-check
+```
 
-## Recovery plan
+Use `--root /opt/basm-local` before the command for a local installation.
+Restores require an explicit snapshot ID and a new staging directory outside
+live data and backups. Restic verifies restored contents; BASM validates the
+manifest. Nothing is written over the running deployment. Inspect actual files
+and accounts on a disposable recovery host before relying on recovery.
 
-To recover from disaster:
+Nightly pruning retains 7 daily, 4 weekly and 12 monthly snapshots.
+`sudo basm prune` applies the same policy manually. Legacy partial snapshots
+are left untouched; only complete `basm-v2` snapshots qualify for BASM recovery.
 
-1. Reinstall Debian and BASM.
-2. Restore both the Restic repository and the root-only BASM config file.
-3. Recreate containers and restore the snapshots.
-4. Restore database dumps and validate services and URLs.
+## Replacement host
 
-## Notes
+Save a small private recovery kit to another filesystem:
 
-The repository is local to the host by default. A disk failure can destroy both the live data and its backups, so configure an external copy for real disaster recovery. Retention is seven daily, four weekly, and twelve monthly snapshots.
+```sh
+sudo basm recovery-kit /media/recovery-usb
+```
+
+On a fresh Debian host, restore the off-host repository to its original path.
+Keep the original domain, deployment path and backup path. Do **not** run the
+normal installer and do not create the deployment directory.
+
+```sh
+cd /media/recovery-usb/basm-recovery-kit
+sudo bash recover.sh ./basm.env SNAPSHOT_ID
+```
+
+Recovery verifies a staged restore, refuses existing data/containers, reinstates
+saved image versions, restores Fluxer when selected, and reinstalls maintenance
+jobs and takes a fresh complete backup. Internet access is needed for packages
+and saved images. Existing manual
+host configuration (firewall, SSH, enabled WireGuard server, router and DNS)
+remains an IT responsibility.
+
+After a bad update, preserve failed data and use a replacement host or an
+administrator-reviewed recovery procedure. Never downgrade images over migrated
+databases, delete business data, or remove an interruption marker merely to retry.

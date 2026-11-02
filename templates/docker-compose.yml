@@ -1,6 +1,14 @@
+x-service: &service
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: '3'
+
 services:
   traefik:
-    image: traefik:v3.1
+    <<: *service
+    image: traefik:v3
     container_name: ${BASM_CONTAINER_PREFIX}-traefik
     restart: unless-stopped
     command:
@@ -16,8 +24,14 @@ services:
       - ${BASM_ROOT}/data/traefik:/data
     networks:
       - basm-net
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   erp-db:
+    <<: *service
     image: mariadb:11.8
     container_name: ${BASM_CONTAINER_PREFIX}-erp-db
     restart: unless-stopped
@@ -38,21 +52,34 @@ services:
       - basm-net
 
   erp-redis-cache:
+    <<: *service
     image: redis:7-alpine
     container_name: ${BASM_CONTAINER_PREFIX}-erp-redis-cache
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - basm-net
 
   erp-redis-queue:
+    <<: *service
     image: redis:7-alpine
     container_name: ${BASM_CONTAINER_PREFIX}-erp-redis-queue
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - basm-net
 
   erp-configurator:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erp-configurator
     restart: "no"
     entrypoint: ["bash", "-c"]
@@ -74,7 +101,8 @@ services:
       - basm-net
 
   erpnext-create-site:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-create-site
     restart: "no"
     entrypoint: ["bash", "/etc/basm/create-site.sh"]
@@ -90,16 +118,17 @@ services:
       erp-db:
         condition: service_healthy
       erp-redis-cache:
-        condition: service_started
+        condition: service_healthy
       erp-redis-queue:
-        condition: service_started
+        condition: service_healthy
       erp-configurator:
         condition: service_completed_successfully
     networks:
       - basm-net
 
   erpnext-backend:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-backend
     restart: unless-stopped
     environment:
@@ -119,7 +148,8 @@ services:
       - basm-net
 
   erpnext-frontend:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-frontend
     restart: unless-stopped
     command: ["nginx-entrypoint.sh"]
@@ -144,7 +174,8 @@ services:
       - basm-net
 
   erpnext-websocket:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-websocket
     restart: unless-stopped
     command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
@@ -161,7 +192,8 @@ services:
       - basm-net
 
   erpnext-scheduler:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-scheduler
     restart: unless-stopped
     command: ["bench", "schedule"]
@@ -175,7 +207,8 @@ services:
       - basm-net
 
   erpnext-worker:
-    image: frappe/erpnext:v16.52.1
+    <<: *service
+    image: frappe/erpnext:v16
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-worker
     restart: unless-stopped
     command: ["bench", "worker", "--queue", "short,default,long"]
@@ -192,6 +225,7 @@ services:
       - basm-net
 
   nextcloud-db:
+    <<: *service
     image: mariadb:11.8
     container_name: ${BASM_CONTAINER_PREFIX}-nextcloud-db
     restart: unless-stopped
@@ -215,16 +249,23 @@ services:
       - basm-net
 
   nextcloud-redis:
+    <<: *service
     image: redis:7-alpine
     container_name: ${BASM_CONTAINER_PREFIX}-nextcloud-redis
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     volumes:
       - nextcloud-redis-data:/data
     networks:
       - basm-net
 
   nextcloud:
-    image: nextcloud:apache
+    <<: *service
+    image: nextcloud:33-apache
     container_name: ${BASM_CONTAINER_PREFIX}-nextcloud
     restart: unless-stopped
     environment:
@@ -244,9 +285,9 @@ services:
       nextcloud-db:
         condition: service_healthy
       nextcloud-redis:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost/status.php"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost/status.php | grep -q '\"installed\":true'"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -255,7 +296,8 @@ services:
       - basm-net
 
   nextcloud-cron:
-    image: nextcloud:apache
+    <<: *service
+    image: nextcloud:33-apache
     container_name: ${BASM_CONTAINER_PREFIX}-nextcloud-cron
     restart: unless-stopped
     entrypoint: ["/cron.sh"]
@@ -268,6 +310,7 @@ services:
       - basm-net
 
   postal-db:
+    <<: *service
     image: mariadb:10.11
     container_name: ${BASM_CONTAINER_PREFIX}-postal-db
     restart: unless-stopped
@@ -289,7 +332,8 @@ services:
       - basm-net
 
   postal-initialize:
-    image: ghcr.io/postalserver/postal:latest
+    <<: *service
+    image: ghcr.io/postalserver/postal:3.3.7
     container_name: ${BASM_CONTAINER_PREFIX}-postal-initialize
     restart: "no"
     command: ["postal", "initialize"]
@@ -302,7 +346,8 @@ services:
       - basm-net
 
   postal-web:
-    image: ghcr.io/postalserver/postal:latest
+    <<: *service
+    image: ghcr.io/postalserver/postal:3.3.7
     container_name: ${BASM_CONTAINER_PREFIX}-postal-web
     restart: unless-stopped
     command: ["postal", "web-server"]
@@ -315,7 +360,8 @@ services:
       - basm-net
 
   postal-smtp:
-    image: ghcr.io/postalserver/postal:latest
+    <<: *service
+    image: ghcr.io/postalserver/postal:3.3.7
     container_name: ${BASM_CONTAINER_PREFIX}-postal-smtp
     restart: unless-stopped
     command: ["postal", "smtp-server"]
@@ -332,7 +378,8 @@ services:
       - basm-net
 
   postal-worker:
-    image: ghcr.io/postalserver/postal:latest
+    <<: *service
+    image: ghcr.io/postalserver/postal:3.3.7
     container_name: ${BASM_CONTAINER_PREFIX}-postal-worker
     restart: unless-stopped
     command: ["postal", "worker"]
@@ -345,7 +392,8 @@ services:
       - basm-net
 
   postal-runner:
-    image: ghcr.io/postalserver/postal:latest
+    <<: *service
+    image: ghcr.io/postalserver/postal:3.3.7
     container_name: ${BASM_CONTAINER_PREFIX}-postal-runner
     profiles: ["tools"]
     command: ["postal"]
@@ -354,82 +402,6 @@ services:
     depends_on:
       postal-initialize:
         condition: service_completed_successfully
-    networks:
-      - basm-net
-
-  db-backup:
-    image: mariadb:11.8
-    container_name: ${BASM_CONTAINER_PREFIX}-db-backup
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        set -e;
-        umask 077;
-        chmod 600 /dumps/*.sql 2>/dev/null || true;
-        while true; do
-          MYSQL_PWD="$$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h erp-db -uroot --all-databases > /dumps/erp.sql.tmp;
-          mv /dumps/erp.sql.tmp /dumps/erp.sql;
-          MYSQL_PWD="$$DB_ROOT_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h nextcloud-db -uroot --all-databases > /dumps/nextcloud.sql.tmp;
-          mv /dumps/nextcloud.sql.tmp /dumps/nextcloud.sql;
-          MYSQL_PWD="$$POSTAL_DB_PASSWORD" mariadb-dump --skip-ssl --single-transaction --routines --events -h postal-db -uroot --all-databases > /dumps/postal.sql.tmp;
-          mv /dumps/postal.sql.tmp /dumps/postal.sql;
-          sleep 86400;
-        done
-    environment:
-      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      POSTAL_DB_PASSWORD: ${POSTAL_DB_PASSWORD}
-    volumes:
-      - ${BASM_ROOT}/data/db-backups:/dumps
-    depends_on:
-      erp-db:
-        condition: service_healthy
-      nextcloud-db:
-        condition: service_healthy
-      postal-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "test -s /dumps/erp.sql && test -s /dumps/nextcloud.sql && test -s /dumps/postal.sql"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    networks:
-      - basm-net
-
-  restic-backup:
-    image: restic/restic:0.18.1
-    container_name: ${BASM_CONTAINER_PREFIX}-restic-backup
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        set -e;
-        restic snapshots >/dev/null 2>&1 || restic init;
-        while true; do
-          restic backup /source/erpnext /source/nextcloud /source/postal-db-dumps /source/config /source/fluxer-backups;
-          restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune;
-          sleep 86400;
-        done
-    environment:
-      RESTIC_REPOSITORY: /repository
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
-    volumes:
-      - ${BASM_ROOT}/data/erpnext:/source/erpnext:ro
-      - ${BASM_ROOT}/data/nextcloud:/source/nextcloud:ro
-      - ${BASM_ROOT}/data/db-backups:/source/postal-db-dumps:ro
-      - ${BASM_ROOT}/config:/source/config:ro
-      - ${BACKUP_LOCATION}/fluxer:/source/fluxer-backups:ro
-      - ${BACKUP_LOCATION}/restic:/repository
-    depends_on:
-      db-backup:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "restic snapshots >/dev/null 2>&1"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
     networks:
       - basm-net
 

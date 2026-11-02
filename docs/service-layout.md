@@ -11,18 +11,22 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/config/prepared-modules/` | Staged, inactive module configs for `--full` |
 | `<BASM_ROOT>/config/disable-auto-updates` | Marker that disables scheduled updates |
 | `<BASM_ROOT>/handover/` | For-the-User and For-IT documents (`0700`) |
-| `<BASM_ROOT>/maintenance/` | Protected automatic updater |
-| `<BASM_ROOT>/logs/` | `automatic-updates.log`, `ddns.log` |
+| `<BASM_ROOT>/maintenance/` | Installed operator CLI, updater, recovery code and templates |
+| `<BASM_ROOT>/logs/` | Update, backup, health and DDNS logs; `last-failure` |
+| `<BASM_ROOT>/config/images.json` | Saved core image digests |
+| `<BASM_ROOT>/config/update-in-progress` | Interrupted-update gate |
+| `<BASM_ROOT>/config/alert-webhook` | Optional private HTTPS notification endpoint |
 | `<BASM_ROOT>/modules/` | Active optional modules (LAMP, Uptime Kuma, WireGuard, Fluxer) |
 | `<BASM_ROOT>/modules/fluxer/` | Fluxer `rexctl` settings and managed Compose project |
-| `<BACKUP_LOCATION>/fluxer/` | Fluxer archive backups, included in Restic snapshots |
+| `<BACKUP_LOCATION>/fluxer/` | Upstream Fluxer archives |
+| `<BASM_ROOT>/data/fluxer-recovery.tar.zst` | Latest Fluxer archive copied into the complete snapshot |
 | `<BASM_ROOT>/data/db-backups` | Database dumps (`0700`/`0600`) |
 | `<BASM_ROOT>/backups/restic` | Default local Restic repository (local mode) |
-| `/etc/cron.d/` | Deployment-specific update and DDNS jobs |
+| `/etc/cron.d/` | Deployment-specific update, backup, check and DDNS jobs |
 
 ## Compose projects and naming
 
-- Core stack: ERPNext, Nextcloud, Postal, Traefik, and Restic backup job.
+- Core stack: ERPNext, Nextcloud, Postal and Traefik. Restic runs on the host.
 - Optional modules run as separate Compose projects named `<prefix>-lamp`,
   `<prefix>-uptime-kuma`, and `<prefix>-fluxer` (the Fluxer project is managed
   by its upstream `rexctl` CLI).
@@ -49,4 +53,4 @@ in production and `127.0.0.1:2525` in local mode.
 
 `templates/` holds the Compose, Traefik, Postal, systemd, and DDNS templates
 rendered at install time. `modules/*.sh` contain the module installers and
-`install.sh`, `update.sh`, and `uninstall.sh` are the entry points.
+`install.sh`, `update.sh`, `recover.sh`, `uninstall.sh`, and `bin/basm` are the entry points.

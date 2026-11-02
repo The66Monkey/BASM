@@ -173,6 +173,14 @@ sudo systemctl restart containerd
 
 To upgrade an existing BASM installation without losing data:
 
+For the first adoption of the operator tools, rerun the installer from a
+reviewed checkout during a maintenance window. It installs host Restic and
+validation dependencies, replaces the old backup loops, and performs a guarded
+update with a complete pre-update snapshot. Incompatible upgrades stop before
+application replacement. Preserve an independent backup before adopting this release.
+Once the tools are installed, use `sudo basm update --release /path/to/checkout`
+for subsequent reviewed releases; rerun the wizard only to change settings.
+
 1. **Pull the latest code:**
    ```bash
    cd /path/to/basm
@@ -192,8 +200,8 @@ To upgrade an existing BASM installation without losing data:
 
 4. **Verify the upgrade:**
    ```bash
-   sudo docker ps
-   sudo ./update.sh  # If application images need updating
+   sudo basm status
+   sudo basm check
    ```
 
 ## Moving BASM to a Larger Disk
