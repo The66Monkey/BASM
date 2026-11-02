@@ -62,10 +62,21 @@ This deployment-specific checkpoint is not a supported installer profile:
   `{"status":"ok"}`. Hostname/IP validation prevents path traversal; writes are
   atomic. Existing JSON files were retained. No API key is required for legacy
   clients: submissions can be spoofed, so treat them only as IP-discovery hints
-  and retain SSH host-key verification. An actual kiosk update is not yet verified.
-  The kiosk is outside without VPN, so it cannot reach `192.168.50.20`.
-  Check its existing public endpoint and TCP 8000 forwarding to the BASM VM;
+  and retain SSH host-key verification. A manual POST from the real kiosk returned
+  OK and updated its server-side file at 22:33:46 UTC on 2026-11-02. This verifies
+  the public path, not its recurring heartbeat schedule.
+  The kiosk is outside without VPN and uses the public hostname on TCP 8000,
+  not `192.168.50.20`;
   a successful RustDesk session does not provide VPN routing for its heartbeat.
+- The restaurant kiosk is third-party-owned and explicitly untrusted; the owner
+  only manages menu uploads. Assume it can be compromised at any time. Store no
+  BASM/DEN credentials, vaults, administrator private keys or home VPN profiles
+  there, and do not enroll it as a trusted LAN/VPN client. The unauthenticated
+  HTTP heartbeat contains no authentication secret and grants no trusted identity.
+  Treat its hostname/IP as attacker-controlled hints, not authority to execute
+  commands or automatically accept a changed SSH host key. Keep management
+  credentials on the trusted administrator device; do not forward an SSH agent
+  to the kiosk. Minimize remote access to the menu-management task.
 - Heartbeat uses a locally imported image ID, not a registry-published image.
   Recovery requires saving/loading that image separately; a Compose file alone
   cannot pull it on a fresh machine.
