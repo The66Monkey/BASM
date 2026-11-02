@@ -10,6 +10,10 @@ Tests cover:
 - Local/private binding, saved credentials, module upgrades and handovers.
 - Data-only configuration parsing and invalid settings.
 - Complete encrypted snapshots and verified staged restores with real Restic.
+- Writable block/virtiofs/NFS/CIFS mount discovery and system-disk warnings.
+- Verified external mount adoption, preserved snapshots/identity, wrong passwords,
+  foreign/empty repositories, missing repository data, failed full-data checks, changed/missing mounts,
+  and refusal to create backup directories on a mismatched filesystem.
 - Optional-module files, backup exclusions, stopped services and restart failures.
 - Backup, pull and health failure gates; interrupted-update retry protection.
 - Nextcloud/database version policy, operation locks, freshness/disk thresholds,
@@ -25,5 +29,6 @@ Debian host with non-sensitive data, validate:
 - Nightly stop/backup/restart timing, external webhook delivery and six-month scheduling.
 - Full replacement-host recovery with saved accounts, files, databases and RustDesk keys.
 - Reboot behavior, missing backup mounts, TLS/DNS and public/private reachability.
+  For VM deployments, follow the [host/guest storage acceptance checks](virtual-machines.md#acceptance-and-recovery).
 
 DEN is unchanged by these improvements and keeps its home-user workflow.

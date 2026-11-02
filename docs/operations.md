@@ -12,6 +12,7 @@ your configured root, or `/opt/basm-local` for local mode.
 | Application logs | `sudo basm logs nextcloud` |
 | Backup now | `sudo basm backup` |
 | Verify backup contents | `sudo basm verify-backup` |
+| Move VM backups onto host storage | [VM backup storage and verified mount adoption](virtual-machines.md) |
 | Recovery | [Backup and recovery](backup.md) |
 | Admin, team and personal password vaults | [KeePass sharing](keepass-sharing.md) |
 | Import an old server or test a migration | [Migration and acceptance](migration.md) |

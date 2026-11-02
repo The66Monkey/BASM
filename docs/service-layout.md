@@ -15,6 +15,8 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/logs/` | Update, backup, health and DDNS logs; `last-failure` |
 | `<BASM_ROOT>/config/images.json` | Saved core image digests |
 | `<BASM_ROOT>/config/update-in-progress` | Interrupted-update gate |
+| `<BASM_ROOT>/config/backup-device` | Saved backup filesystem identity; rejects missing or changed mounts |
+| `<BASM_ROOT>/config/backup-device.before-adopt.*` | Previous identities retained by verified mount adoption |
 | `<BASM_ROOT>/config/alert-webhook` | Optional private HTTPS notification endpoint |
 | `<BASM_ROOT>/modules/` | Active optional modules (LAMP, Uptime Kuma, WireGuard, Fluxer) |
 | `<BASM_ROOT>/modules/fluxer/` | Fluxer `rexctl` settings and managed Compose project |

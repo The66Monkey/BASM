@@ -19,6 +19,22 @@ disk loss or theft. Keep an independent encrypted off-host copy and the Restic
 password from `config/basm.env`. The backup filesystem identity is recorded;
 a missing or changed mount stops the job instead of writing onto the OS disk.
 
+For a production VM, a dedicated directory on a separate host-attached disk can
+be mounted inside the guest with virtiofs. See
+[production VM storage](virtual-machines.md) for provisioning, startup ordering,
+safe migration of an existing repository, and recovery acceptance tests.
+
+### Adopting a deliberately changed mount
+
+After copying the existing repository to separate mounted storage **at the
+same configured guest path**, run `sudo basm backup-adopt-mount`. It requires
+a complete snapshot for the current deployment and fully verifies repository
+data before atomically updating the saved filesystem identity; the old identity
+is retained privately. It does not copy data, configure mounts, create a
+repository or remove the original copy. Failures leave the identity unchanged.
+Use the [locked migration procedure](virtual-machines.md#moving-an-existing-vm-disk-repository),
+not this command to dismiss an unexpected mount failure.
+
 ## Routine commands
 
 ```sh

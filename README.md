@@ -18,6 +18,8 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - Optional LAMP, WireGuard, Uptime Kuma, RustDesk Server OSS, and KeePassXC credential manager modules. The full profile includes every supported module, including Fluxer; Vaultwarden is deprecated for new installs.
 
 Everything runs as Docker Compose stacks on a single Debian server.
+A production Debian VM is supported, including encrypted backups to a dedicated
+host-disk share; see [VM deployment and backup storage](docs/virtual-machines.md).
 
 ## Quick start
 
@@ -95,6 +97,7 @@ without touching core services or data. See
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Production VMs and backup storage](docs/virtual-machines.md)
 - [Reinstalling & Upgrading](docs/reinstalling.md)
 - [Operations](docs/operations.md)
 - [Architecture](docs/architecture.md)

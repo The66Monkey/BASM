@@ -72,6 +72,12 @@ restarts or repeatedly rerun the installer to work around limits.
 - check that the configured backup filesystem is mounted; a changed identity
   is an error, not a reason to delete the repository or its saved identity
 
+For VM host-disk backups, check both the host's external-disk mount and the
+guest's directory-share mount. An existing repository deliberately moved to
+another filesystem can be adopted with `sudo basm backup-adopt-mount`, but only
+after following the [migration and verification procedure](virtual-machines.md#moving-an-existing-vm-disk-repository).
+Do not use adoption to mask a missing disk or unexpected share.
+
 ## Interrupted update
 
 Read `logs/automatic-updates.log`, `logs/last-failure`, and application logs.

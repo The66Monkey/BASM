@@ -14,6 +14,7 @@ case "$ACTION" in
 Usage: sudo basm [--root /opt/basm-local] COMMAND
   status | check | logs [service | module[/service]] | start | stop
   backup | snapshots | verify-backup | prune
+  backup-adopt-mount
   restore SNAPSHOT_ID NEW_STAGING_DIRECTORY
   recovery-kit EXTERNAL_DIRECTORY
   update [--release TRUSTED_CHECKOUT]
@@ -30,7 +31,7 @@ case "$ACTION" in
   restore) [[ $# == 2 ]] || fail "restore requires a snapshot ID and new staging directory." ;;
   recovery-kit) [[ $# == 1 ]] || fail "recovery-kit requires an external directory." ;;
   logs) [[ $# -le 1 ]] || fail "logs accepts at most one service or module/service." ;;
-  status|check|start|stop|backup|snapshots|verify-backup|prune|alert-test)
+  status|check|start|stop|backup|snapshots|verify-backup|prune|backup-adopt-mount|alert-test)
     [[ $# == 0 ]] || fail "$ACTION takes no arguments." ;;
   *) fail "Unknown command: $ACTION" ;;
 esac
@@ -63,6 +64,7 @@ case "$ACTION" in
   backup) backup_deployment; restic_command forget --host "$BASM_CONTAINER_PREFIX" --tag basm-v2 --group-by host,paths --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune ;;
   snapshots) restic_command snapshots ;;
   verify-backup) restic_command check --read-data ;;
+  backup-adopt-mount) adopt_backup_mount ;;
   prune) restic_command forget --host "$BASM_CONTAINER_PREFIX" --tag basm-v2 --group-by host,paths --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune ;;
   restore) restore_deployment "$1" "$2" ;;
   recovery-kit) recovery_kit "$1" ;;

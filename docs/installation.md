@@ -14,6 +14,11 @@ During Debian's software selection, enable **SSH server** for remote
 administration. Leave **web server** unselected: BASM provides Traefik and
 uses ports 80 and 443 by default, which can conflict with a host web server.
 
+A production Debian VM is supported; install BASM inside the guest, not on the
+hypervisor. Before installation, provision backup storage outside the guest disk.
+See [production VMs and host-disk backups](virtual-machines.md) for a complete
+libvirt/virtiofs example and an existing-deployment migration procedure.
+
 ## Steps
 
 1. Copy the BASM project to the Debian host.
@@ -45,10 +50,12 @@ Run `timedatectl list-timezones` in another terminal to browse available names.
 ### Choosing a backup destination
 
 The wizard offers a numbered list: the default directory, writable mounted disk
-filesystems, and a custom directory. Disk choices use a `basm-backups`
+filesystems and virtiofs/NFS/CIFS shares, and a custom directory. Mount choices use a `basm-backups`
 subdirectory on the selected mount. The installer does not format or mount disks;
 attach and mount a backup disk or network share before starting the wizard.
 Unmounted disks and host disks not attached/shared with a VM are not available.
+If the host share is mounted directly at `/var/backups/basm`, keeping that default
+uses the host disk. Verify the guest mount before first installation.
 
 Press Enter to keep the default (`/var/backups/basm` in production). This normally
 stores backups on the system disk; the wizard warns if the destination shares

@@ -7,20 +7,60 @@ module_install() {
 
 restic_command() {
   [[ -d "$BACKUP_LOCATION" && ! -L "$BACKUP_LOCATION" ]] || fail "Backup destination is missing or a symlink."
+  check_backup_filesystem || return
+  restic_repository_command "$@"
+}
+
+check_backup_filesystem() {
   local device_file="$BASM_ROOT/config/backup-device" identity
   if [[ -f "$device_file" ]]; then
-    identity="$(backup_filesystem)" || return
+    identity="$(backup_filesystem)" || fail "Could not identify the backup filesystem. Check the configured mount."
     [[ "$identity" == "$(< "$device_file")" ]] ||
       fail "Backup filesystem changed or is not mounted. Mount it before continuing."
   fi
+}
+
+restic_repository_command() {
   RESTIC_REPOSITORY="$BACKUP_LOCATION/restic" RESTIC_PASSWORD="$RESTIC_PASSWORD" \
     RESTIC_CACHE_DIR="$BACKUP_LOCATION/cache" restic "$@"
 }
 
 backup_filesystem() {
   findmnt --json --target "$BACKUP_LOCATION" --output TARGET,SOURCE,UUID |
-    jq -ce '.filesystems[0] | if .uuid != null then {target,uuid} else {target,source} end'
+    jq -ce '.filesystems[0] | select(.target != null) |
+      if .uuid != null then {target,uuid} else select(.source != null) | {target,source} end'
 }
+
+adopt_backup_mount() (
+  set -euo pipefail
+  umask 077
+  local device_file="$BASM_ROOT/config/backup-device" identity snapshots temporary previous
+  [[ -f "$device_file" ]] || fail "No saved backup filesystem exists. Use the installer for a new repository."
+  [[ -d "$BACKUP_LOCATION" && ! -L "$BACKUP_LOCATION" &&
+    -f "$BACKUP_LOCATION/restic/config" ]] || fail "Mount the existing encrypted repository at the saved backup location first."
+  identity="$(backup_filesystem)" || fail "Could not identify the mounted backup filesystem."
+  [[ "$(jq -r '.target' <<< "$identity")" != / &&
+    "$(stat -c %d "$BACKUP_LOCATION")" != "$(stat -c %d "$BASM_ROOT")" ]] ||
+    fail "Mount separate backup storage first; refusing to adopt the deployment filesystem."
+  snapshots="$(restic_repository_command snapshots --json)" || return
+  jq -e --arg root "$BASM_ROOT" --arg host "$BASM_CONTAINER_PREFIX" \
+    'any(.[]; .hostname == $host and .paths == [$root] and
+      ((.tags // []) | index("basm-v2")) != null)' <<< "$snapshots" >/dev/null ||
+    fail "No complete snapshot for this deployment was found; the saved filesystem is unchanged."
+  log "Verifying all backup data before adopting the mounted repository."
+  restic_repository_command check --read-data || return
+  [[ "$(backup_filesystem)" == "$identity" ]] || fail "Backup filesystem changed during verification."
+  previous="$(mktemp "$device_file.before-adopt.XXXXXX")" || return
+  cp -p "$device_file" "$previous" || return
+  chmod 600 "$previous" || return
+  temporary="$(mktemp "$device_file.new.XXXXXX")" || return
+  trap 'rm -f "$temporary"' EXIT
+  printf '%s\n' "$identity" > "$temporary"
+  chmod 600 "$temporary"
+  mv -f "$temporary" "$device_file"
+  log "Mounted backup repository adopted. Previous filesystem identity saved at $previous."
+  log "No backup data was moved or deleted. Test a fresh backup and recovery before removing the old copy."
+)
 
 record_stack_images() {
   local file="$1" destination="$2" configuration service image container digest temporary
@@ -137,6 +177,7 @@ backup_deployment() (
 )
 
 initialize_repository() {
+  check_backup_filesystem || return
   mkdir -p "$BACKUP_LOCATION" || return
   if [[ ! -f "$BACKUP_LOCATION/restic/config" ]]; then
     [[ ! -d "$BACKUP_LOCATION/restic" || -z "$(ls -A "$BACKUP_LOCATION/restic")" ]] ||

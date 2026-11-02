@@ -500,16 +500,17 @@ prompt_ip_mode() {
 select_backup_destination() {
   local default_path="$1" mounts candidates mount source choice destination existing root_device backup_device
   local -a destinations=("$default_path")
-  mounts="$(findmnt --real --list --json --output TARGET,SOURCE,OPTIONS)" ||
+  mounts="$(findmnt --list --json --output TARGET,SOURCE,FSTYPE,OPTIONS)" ||
     fail "Could not list mounted backup filesystems."
   candidates="$(jq -r '.filesystems[] |
-    select(.source | startswith("/dev/")) |
+    select((.source | startswith("/dev/")) or
+      (.fstype | IN("virtiofs", "nfs", "nfs4", "cifs"))) |
     select(.target != "/" and (.target | test("^/(boot|dev|proc|sys|run)(/|$)|^/var/lib/(docker|containers)(/|$)") | not)) |
     select(.options | split(",") | index("rw")) |
     [.target, .source] | @tsv' <<< "$mounts")" ||
     fail "Could not read mounted backup filesystems."
 
-  printf '\nBackup destination (only already-mounted disks are listed):\n' >&2
+  printf '\nBackup destination (only already-mounted disks and supported shares are listed):\n' >&2
   printf '  1) Default directory: %s\n' "$default_path" >&2
   while IFS=$'\t' read -r mount source; do
     [[ -n "$mount" ]] || continue
@@ -522,7 +523,8 @@ select_backup_destination() {
   local custom_choice=$((${#destinations[@]} + 1))
   printf '  %s) Custom directory (e.g. an already-mounted network share)\n' "$custom_choice" >&2
   printf 'You can also enter an absolute directory path directly.\n' >&2
-  printf 'No disks will be formatted or mounted. An in-VM backup needs an off-host copy too.\n' >&2
+  printf 'No disks will be formatted or mounted. For a VM, mount host backup storage in the guest first.\n' >&2
+  printf 'A host-disk backup protects against guest-disk loss; keep a separate off-host copy too.\n' >&2
   while true; do
     read -rp "Backup destination [1] (press Enter to accept): " choice || fail "No backup destination selection received."
     choice="${choice:-1}"
@@ -842,6 +844,7 @@ configure_system() {
   ensure_dir "$BASM_ROOT/data/db-backups"
   chmod 700 "$BASM_ROOT/data/db-backups"
   ensure_dir "$BASM_ROOT/logs"
+  check_backup_filesystem || fail "Could not access the saved backup filesystem."
   ensure_dir "$BACKUP_LOCATION"
   ensure_dir "$BACKUP_LOCATION/restic"
   ensure_dir "$OUTPUT_DIR"
