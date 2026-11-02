@@ -83,6 +83,7 @@ case "$ACTION" in
     else
       upgrade_modules "$MODULE_NAME"
     fi
+    install_login_banner
     exit $?
     ;;
   full)
@@ -90,10 +91,12 @@ case "$ACTION" in
     install_operation_trap "Full-profile upgrade"
     load_deployment_env
     upgrade_to_full
+    install_login_banner
     exit $?
     ;;
   promote)
     promote_to_production
+    install_login_banner
     exit $?
     ;;
 esac
@@ -102,6 +105,7 @@ run_wizard
 install_operation_trap "Installation"
 configure_system
 install_selected_modules
+install_login_banner
 write_summary
 
 log "BASM installation completed. Review the generated summary in $OUTPUT_DIR."

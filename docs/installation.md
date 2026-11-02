@@ -37,6 +37,8 @@ The installer does the following:
 - Deploys the selected optional modules
 - Creates the post-installation summary
 - Installs the `basm` operator command, hourly checks and optional webhook support
+- Adds a compact interactive login banner with the host name, IPv4 address, and
+  BASM container status
 
 Production LAMP and Uptime Kuma bind to loopback by default. Use SSH tunnels or
 set `MANAGEMENT_BIND_ADDRESS` to a private LAN IPv4 before regenerating those

@@ -40,6 +40,13 @@ ensure_dir() {
   mkdir -p "$1"
 }
 
+install_login_banner() {
+  local profile_dir="${BASM_PROFILE_DIR:-/etc/profile.d}"
+  install -d -m 755 "$profile_dir" || fail "Could not create the BASM login profile directory."
+  install -m 644 "$ROOT_DIR/templates/profile.d/basm.sh" "$profile_dir/basm.sh" ||
+    fail "Could not install the BASM login banner."
+}
+
 BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk"
 BASM_PREPARED_MODULES="lamp wireguard uptime-kuma rustdesk"
 BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux python3 python3-yaml jq restic"

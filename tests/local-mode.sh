@@ -7,6 +7,11 @@ TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 source "$ROOT_DIR/modules/core.sh"
 
+BASM_PROFILE_DIR="$TEST_DIR/profile.d"
+install_login_banner
+cmp "$ROOT_DIR/templates/profile.d/basm.sh" "$BASM_PROFILE_DIR/basm.sh"
+[[ "$(stat -c '%a' "$BASM_PROFILE_DIR/basm.sh")" == 644 ]]
+
 previous_password=""
 for attempt in {1..10}; do
   password="$(generate_password)"

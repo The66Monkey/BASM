@@ -3,10 +3,10 @@ set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-for script in install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh templates/*.sh tests/*.sh; do
+for script in install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh templates/*.sh templates/profile.d/*.sh tests/*.sh; do
   bash -n "$script"
 done
-shellcheck --severity=error -x -P "$ROOT" install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh templates/*.sh tests/*.sh
+shellcheck --severity=error -x -P "$ROOT" install.sh update.sh recover.sh uninstall.sh bin/basm modules/*.sh templates/*.sh templates/profile.d/*.sh tests/*.sh
 bash tests/configuration.sh
 bash tests/local-mode.sh
 bash tests/lifecycle.sh
