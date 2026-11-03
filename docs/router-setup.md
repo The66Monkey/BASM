@@ -115,6 +115,21 @@ hostname: that needs an explicitly configured shared reverse proxy, or private
 DEN access through its VPN. Preserve the old server and forwarding until the
 replacement has been tested and cutover is approved.
 
+### AdGuard administration with DEN
+
+BASM does not install a DNS resolver or own AdGuard. When DEN provides shared
+DNS/HTTPS infrastructure, use `https://dns.example.com` for the AdGuard interface,
+with your configured domain. Add an exact **private AdGuard rewrite** from
+`dns.example.com` to DEN's LAN address; keep it out of BASM's public DDNS records.
+The DEN edge restricts access to LAN/VPN clients and retains AdGuard's login.
+
+Use that interface to manage LAN filtering and inspect device requests.
+Moving DHCP DNS to AdGuard does not migrate the router's blocking rules.
+Transfer reviewed rules there, preferably scoped to a device's reserved IP.
+Neither project installs a blanket vendor/TV blocking list.
+See DEN's [AdGuard setup](https://github.com/The66Monkey/DEN/blob/main/docs/infrastructure.md#adguard-administration-dnsexamplecom)
+for HTTPS, private DNS, VPN records and optional device-specific examples.
+
 ## DNS and server access
 
 Do not expose SSH by default. Prefer a configured VPN for remote administration.
