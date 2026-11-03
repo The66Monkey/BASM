@@ -3,6 +3,8 @@ entryPoints:
     address: ":80"
   websecure:
     address: ":443"
+    forwardedHeaders:
+      trustedIPs: ${TRAEFIK_TRUSTED_IPS}
 providers:
   file:
     filename: "/etc/traefik/dynamic.yml"

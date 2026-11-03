@@ -433,8 +433,13 @@ render_stack() {
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
   envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
     < "$proxy_template" |
-    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" \
+    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" \
       > "$destination/config/traefik.yml" || return
+  local TRAEFIK_TRUSTED_IPS='[]'
+  if [[ -f "$BASM_ROOT/config/traefik-edge-ip" ]]; then
+    TRAEFIK_TRUSTED_IPS="$(python3 -c 'import ipaddress,json,sys; print(json.dumps([str(ipaddress.IPv4Address(open(sys.argv[1]).read().strip())) + "/32"]))' "$BASM_ROOT/config/traefik-edge-ip")" || return
+  fi
+  export TRAEFIK_TRUSTED_IPS
   envsubst < "$ROOT_DIR/templates/traefik-static.yml" > "$destination/config/traefik-static.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     cat >> "$destination/config/traefik-static.yml" <<EOF
@@ -444,8 +449,23 @@ certificatesResolvers:
     acme:
       email: "$ADMIN_EMAIL"
       storage: "/data/acme.json"
-      tlsChallenge: {}
 EOF
+    if [[ -f "$BASM_ROOT/data/traefik/desec-token" ]]; then
+      [[ -s "$BASM_ROOT/data/traefik/desec-token" && ! -L "$BASM_ROOT/data/traefik/desec-token" ]] ||
+        fail "The Traefik deSEC token must be a nonempty regular file."
+      (( (8#$(stat -c %a "$BASM_ROOT/data/traefik/desec-token") & 077) == 0 )) ||
+        fail "The Traefik deSEC token must be private; use chmod 600."
+      cat >> "$destination/config/traefik-static.yml" <<'EOF'
+      dnsChallenge:
+        provider: desec
+        resolvers: ["1.1.1.1:53", "1.0.0.1:53"]
+        propagation:
+          delayBeforeChecks: 60s
+          requireAllRNS: true
+EOF
+    else
+      printf '      tlsChallenge: {}\n' >> "$destination/config/traefik-static.yml" || return
+    fi
   fi
   render_homepage
 }

@@ -199,6 +199,21 @@ render_stack
 grep -Fq '"0.0.0.0:80:80"' "$BASM_ROOT/docker-compose.yml"
 grep -Fq 'container_name: basm-traefik' "$BASM_ROOT/docker-compose.yml"
 grep -Fqx 'certificatesResolvers:' "$BASM_ROOT/config/traefik-static.yml"
+grep -Fq 'tlsChallenge: {}' "$BASM_ROOT/config/traefik-static.yml"
+mkdir -p "$BASM_ROOT/data/traefik"
+printf 'abcdefghijklmnopqrstuvwxyz12\n' > "$BASM_ROOT/data/traefik/desec-token"
+chmod 600 "$BASM_ROOT/data/traefik/desec-token"
+render_stack
+grep -Fq 'dnsChallenge:' "$BASM_ROOT/config/traefik-static.yml"
+grep -Fq 'provider: desec' "$BASM_ROOT/config/traefik-static.yml"
+if grep -Fq 'tlsChallenge:' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
+rm "$BASM_ROOT/data/traefik/desec-token"
+printf '198.51.100.10\n' > "$BASM_ROOT/config/traefik-edge-ip"
+render_stack
+grep -Fq 'trustedIPs: ["198.51.100.10/32"]' "$BASM_ROOT/config/traefik-static.yml"
+printf 'not-an-address\n' > "$BASM_ROOT/config/traefik-edge-ip"
+if (render_stack) >"$TEST_DIR/edge-error" 2>&1; then exit 1; fi
+rm "$BASM_ROOT/config/traefik-edge-ip"
 source "$ROOT_DIR/modules/lamp.sh"
 MANAGEMENT_BIND_ADDRESS=127.0.0.1
 module_install

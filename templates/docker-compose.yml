@@ -28,6 +28,9 @@ services:
     restart: unless-stopped
     command:
       - --configfile=/etc/traefik/static.yml
+    environment:
+      DESEC_TOKEN_FILE: /data/desec-token
+      DESEC_PROPAGATION_TIMEOUT: '600'
     ports:
       - "${BIND_ADDRESS}:${HTTP_PORT}:80"
       - "${BIND_ADDRESS}:${HTTPS_PORT}:443"

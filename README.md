@@ -21,6 +21,10 @@ Everything runs as Docker Compose stacks on a single Debian server.
 A production Debian VM is supported, including encrypted backups to a dedicated
 host-disk share; see [VM deployment and backup storage](docs/virtual-machines.md).
 
+When sharing a public IP with another server, BASM can sit behind an independent
+HTTPS edge rather than hosting household DNS or routing other servers' traffic.
+See [backend certificates and proxy configuration](docs/operations.md#basm-behind-a-separate-https-edge).
+
 ## Quick start
 
 A production install needs a **static public IPv4 address** and a DNS domain

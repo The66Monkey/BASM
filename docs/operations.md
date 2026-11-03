@@ -34,6 +34,47 @@ Do not add secrets to the generated `<BASM_ROOT>/home/` directory.
 
 For local-mode commands, put `--root /opt/basm-local` before the command.
 
+## Custom reverse-proxy routes
+
+Optional administrator-owned `config/traefik-custom.yml` adds named HTTP
+`routers`, `services`, `middlewares` and `serversTransports` to generated
+Traefik configuration. Keep it private (`0600`). Managed names cannot be
+overridden; invalid mappings and duplicate names fail rendering.
+This file is retained across route refreshes, application updates and backups.
+Do not edit generated `config/traefik.yml` for persistent changes.
+
+Adding a public route is an explicit access-policy decision. Use exact hostname
+rules, a certificate resolver in production, and verified TLS for remote HTTPS
+backends (set `serversTransports.<name>.serverName` when connecting by IP).
+Custom DNS records must be managed separately. Changes take effect at the next
+route refresh or application update; merely saving the custom file does not
+reload Traefik.
+
+### BASM behind a separate HTTPS edge
+
+BASM can remain a verified HTTPS application backend while a separate
+infrastructure proxy owns public TCP 80/443. In that case TLS-ALPN certificate
+renewal on BASM cannot reach its own challenge handler through a terminating
+edge. Enable independent DNS-challenge renewal instead:
+save a suitably scoped deSEC token privately in `data/traefik/desec-token`
+(`0600`, root-owned). Route regeneration selects deSEC DNS-01 when this file
+exists; the Traefik template reads it from the already-mounted data directory.
+Recreate only Traefik after updating its environment/static configuration.
+Without that file, standalone installations retain TLS-ALPN-01.
+Do not delete the file without planning certificate renewal.
+
+The outer edge must verify BASM's certificate and set SNI to the exact public
+hostname when connecting to the VM's LAN IP. Keep BASM's ACME store separate
+from the edge's store; do not share writable ACME files between proxies.
+To preserve real client addresses, put only the edge's exact LAN IPv4 in the
+private `config/traefik-edge-ip` file. Regeneration validates it and trusts
+forwarded headers from that single address (`/32`), not the LAN or internet.
+Without that file no forwarded-header sources are trusted. Recreate/restart
+Traefik after changing its static configuration.
+No root/business/mail DNS changes are required if the public IPv4 is unchanged.
+Do not retire an old DNS service until legacy VPN DNS forwarders have been
+pointed to the independent resolver.
+
 ## Owner and IT handover
 
 Read these privately on the server:
