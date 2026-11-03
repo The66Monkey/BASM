@@ -531,8 +531,58 @@ prompt_ip_mode() {
   esac
 }
 
+wizard_section() {
+  printf '\n============================================================\n%s\n============================================================\n' "$1"
+}
+
+review_wizard() {
+  if [[ -t 0 && -t 1 && -n "${TERM:-}" && "$TERM" != dumb ]]; then
+    printf '\033[H\033[2J'
+  fi
+  wizard_section "Review BASM setup"
+  printf 'Company: %s\nMode: %s\nData directory: %s\n' "$COMPANY_NAME" "$DEPLOYMENT_MODE" "$BASM_ROOT"
+  printf 'Administrator email: %s\nTimezone: %s\nNextcloud administrator: %s\n' "$ADMIN_EMAIL" "$TIMEZONE" "$NEXTCLOUD_ADMIN_USER"
+  printf '\nDomain: %s\nERP: %s\nMail: %s\nCloud: %s\n' "$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL"
+  printf 'Web bind address: %s\nManagement bind address: %s\n' "$BIND_ADDRESS" "$MANAGEMENT_BIND_ADDRESS"
+  printf 'Public IP type: %s\nBackup destination: %s\nModules: %s\n\n' "$IP_MODE" "$BACKUP_LOCATION" "$BASM_MODULES"
+  warn_backup_filesystem "$BACKUP_LOCATION"
+  port_summary
+  if [[ "$DEPLOYMENT_MODE" == local ]]; then
+    printf '\nLocal access: HTTP on the selected bind address.\n'
+  else
+    printf '\nProduction web routes use public HTTPS. Mail requires DNS records and TCP 25 routing.\n'
+  fi
+  if module_selected fluxer; then
+    printf 'Fluxer: https://%s (public chat/calls).\n' "$FLUXER_DOMAIN"
+  fi
+  printf '\nAccept to save these settings and begin installation.\n'
+  local answer
+  while true; do
+    read -rp "Accept and install (A), restart guide (R), or cancel (C): " answer ||
+      fail "Could not read setup confirmation; deployment settings were not saved."
+    case "${answer,,}" in
+      a|accept) return 0 ;;
+      r|restart) return 2 ;;
+      c|cancel) log "Installation cancelled; deployment settings were not saved."; exit 0 ;;
+      *) warn "Enter A to accept, R to restart, or C to cancel." ;;
+    esac
+  done
+}
+
+warn_backup_filesystem() {
+  local existing="$1" root_device backup_device
+  while [[ ! -e "$existing" ]]; do existing="$(dirname "$existing")"; done
+  root_device="$(findmnt --noheadings --output MAJ:MIN --target /)" ||
+    fail "Could not identify the system filesystem."
+  backup_device="$(findmnt --noheadings --output MAJ:MIN --target "$existing")" ||
+    fail "Could not identify the backup filesystem."
+  if [[ "$root_device" == "$backup_device" ]]; then
+    warn "Backup destination is on the system filesystem. Disk failure would lose both the deployment and its backups."
+  fi
+}
+
 select_backup_destination() {
-  local default_path="$1" mounts candidates mount source choice destination existing root_device backup_device
+  local default_path="$1" mounts candidates mount source choice destination
   local -a destinations=("$default_path")
   mounts="$(findmnt --list --json --output TARGET,SOURCE,FSTYPE,OPTIONS)" ||
     fail "Could not list mounted backup filesystems."
@@ -575,15 +625,7 @@ select_backup_destination() {
     fi
     warn "Choose one of the listed backup destinations."
   done
-  existing="$destination"
-  while [[ ! -e "$existing" ]]; do existing="$(dirname "$existing")"; done
-  root_device="$(findmnt --noheadings --output MAJ:MIN --target /)" ||
-    fail "Could not identify the system filesystem."
-  backup_device="$(findmnt --noheadings --output MAJ:MIN --target "$existing")" ||
-    fail "Could not identify the backup filesystem."
-  if [[ "$root_device" == "$backup_device" ]]; then
-    warn "Backup destination is on the system filesystem. Disk failure would lose both the deployment and its backups."
-  fi
+  warn_backup_filesystem "$destination"
   printf '%s\n' "$destination"
 }
 
@@ -743,6 +785,50 @@ EOF
 run_wizard() {
   log "Launching BASM wizard"
 
+  local variable status
+  local -a settings=(
+    LOCAL_MODE LOCAL_BIND_ADDRESS BASM_ROOT BASM_ENV_FILE DEPLOYMENT_MODE BIND_ADDRESS
+    MANAGEMENT_BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE COMPANY_NAME PRIMARY_DOMAIN
+    ADMIN_EMAIL TIMEZONE NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL MAIL_URL CLOUD_URL
+    IP_MODE DESEC_TOKEN BASM_MODULES HTTP_PORT HTTPS_PORT SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT
+    LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
+    FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
+    DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD POSTAL_DB_PASSWORD
+    POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD POSTAL_WEB_PROTOCOL
+  )
+  local -A initial=()
+  for variable in "${settings[@]}"; do
+    if [[ -v "$variable" ]]; then initial["$variable"]="${!variable}"; fi
+  done
+  while true; do
+    for variable in "${settings[@]}"; do
+      if [[ -v "initial[$variable]" ]]; then
+        printf -v "$variable" '%s' "${initial[$variable]}"
+      else
+        unset "$variable"
+      fi
+    done
+    collect_wizard_settings
+    if review_wizard; then break; else status=$?; fi
+    [[ "$status" == 2 ]] || fail "Could not confirm setup."
+  done
+
+  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_password)}"
+  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_password)}"
+  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_password)}"
+  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_password)}"
+  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_password)}"
+  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
+  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_password)}"
+  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_password)}"
+
+  write_env_file
+  read_deployment_settings
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
+}
+
+collect_wizard_settings() {
+  wizard_section "1/5 - Deployment"
   select_deployment
 
   if [[ "${LOCAL_MODE:-false}" == true ]]; then
@@ -761,6 +847,7 @@ run_wizard() {
   fi
   FLUXER_DOMAIN="chat.$PRIMARY_DOMAIN"
 
+  wizard_section "2/5 - Organization and backups"
   COMPANY_NAME="$(prompt_value "Company Name" "${COMPANY_NAME:-BASM Business}" 'validate_company_name "$1"')"
   local email_validator='validate_email "$1"' default_email="${ADMIN_EMAIL:-admin@example.com}"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then
@@ -781,6 +868,7 @@ run_wizard() {
   BACKUP_LOCATION="$(select_backup_destination "${BACKUP_LOCATION:-$BASM_ROOT/backups}")"
 
   SSH_PORT="${SSH_PORT:-22}"
+  wizard_section "3/5 - Service addresses and DNS"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then
     ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
@@ -806,32 +894,20 @@ run_wizard() {
     DESEC_TOKEN=""
   fi
 
+  wizard_section "4/5 - Modules"
   select_modules
   if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
   fi
   FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
+  wizard_section "5/5 - Ports"
   configure_ports
   if port_in_use "$SMTP_PORT"; then
     warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
   fi
 
-  DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_password)}"
-  ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_password)}"
-  NEXTCLOUD_ADMIN_USER="${NEXTCLOUD_ADMIN_USER:-basm-admin}"
-  NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_password)}"
-  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_password)}"
-  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_password)}"
-  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
-  NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_password)}"
   POSTAL_WEB_PROTOCOL=http
   if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
-  RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_password)}"
-
-  write_env_file
-
-  read_deployment_settings
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
 }
 
 ensure_docker() {
@@ -1839,8 +1915,7 @@ $(credential_summary)
 
 For LAN clients, map home.$PRIMARY_DOMAIN, $ERP_URL, $MAIL_URL and $CLOUD_URL
 to $BIND_ADDRESS in each client's hosts file or private DNS.
-Do not forward these ports on your router. HTTP is unencrypted.
-SSH settings and the host firewall are not changed by local mode.
+Local access uses HTTP on $BIND_ADDRESS:$HTTP_PORT.
 Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port $SMTP_PORT; public mail delivery requires a production domain and DNS records.
 Restic encrypts daily backups to $BACKUP_LOCATION/restic.
 LAMP and Uptime Kuma start automatically when selected; WireGuard generates configuration only.

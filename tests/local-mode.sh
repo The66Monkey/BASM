@@ -138,9 +138,9 @@ port_in_use() { return 1; }
 for address in 127.0.0.1 192.168.1.50; do
   previous_nextcloud_password="${NEXTCLOUD_ADMIN_PASSWORD:-}"
   if [[ "$address" == 127.0.0.1 ]]; then
-    run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\n')
+    run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\nA\n')
   else
-    run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\n' "$address")
+    run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\nA\n' "$address")
   fi
   for variable in DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD; do
     [[ "${!variable}" =~ ^[A-Za-z0-9]{32}$ ]]
@@ -225,7 +225,7 @@ select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
 [[ "$BASM_ROOT" == "$PRODUCTION_BASM_ROOT" ]]
 [[ "$COMPANY_NAME" == 'Production sentinel' ]]
 
-run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
 [[ "$PORT_PROFILE" == custom ]]
 unset HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
 set -a
@@ -246,7 +246,7 @@ grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.tx
 grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
 if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
 
-run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\nnon-static\nshort\nabcdefghijklmnopqrstuvwxyz12\n2 3 6\nstandard\n')
+run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\nnon-static\nshort\nabcdefghijklmnopqrstuvwxyz12\n2 3 6\nstandard\nA\n')
 grep -Fqx 'IP_MODE="non-static"' "$BASM_ENV_FILE"
 grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
 (

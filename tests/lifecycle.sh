@@ -199,7 +199,7 @@ BASM_CRON_DIR="$TEST_DIR/cron.d"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
-run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\n')
+run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
 [[ "$BASM_MODULES" == basm ]]
 configure_system
 install_selected_modules
@@ -369,13 +369,32 @@ touch "$PRODUCTION_BASM_ROOT/docker-compose.yml"
 [[ -f "$LOCAL_BASM_ROOT/config/basm.env" ]]
 rm -rf "$PRODUCTION_BASM_ROOT"
 
+# Cancelling the final setup review must not stop or remove the local stack.
+: > "$DOCKER_LOG"
+(
+  promote_to_production < <(
+    printf 'acme.example\npromote\n'
+    printf '\n\n\n\n\n'
+    printf '\n\n\n\n'
+    printf '\n\nC\n'
+  )
+) > "$TEST_DIR/cancel-review.log"
+[[ ! -s "$DOCKER_LOG" && -f "$LOCAL_BASM_ROOT/config/basm.env" && ! -e "$PRODUCTION_BASM_ROOT" ]]
+
 # A failed production setup rolls back and restores the local install.
 : > "$DOCKER_LOG"
 docker() {
   printf '%s\n' "$*" >> "$DOCKER_LOG"
   [[ "$*" != *"$PRODUCTION_BASM_ROOT/docker-compose.yml"*" up -d"* ]]
 }
-( promote_to_production < <(printf 'acme.example\npromote\n\n\n\n\n\n\n\n\n\n\n') ) 2>/dev/null && exit 1
+(
+  promote_to_production < <(
+    printf 'acme.example\npromote\n'
+    printf '\n\n\n\n\n'
+    printf '\n\n\n\n'
+    printf '\n\nA\n'
+  )
+) 2>/dev/null && exit 1
 [[ -f "$LOCAL_BASM_ROOT/config/basm.env" && -d "$LOCAL_BASM_ROOT/data" && ! -e "$PRODUCTION_BASM_ROOT" ]]
 grep -Fqx "DB_ROOT_PASSWORD=\"$LOCAL_DB_PASSWORD\"" "$LOCAL_BASM_ROOT/config/basm.env"
 grep -Fq "$LOCAL_BASM_ROOT/docker-compose.yml --env-file $LOCAL_BASM_ROOT/config/basm.env down --remove-orphans" "$DOCKER_LOG"
@@ -387,7 +406,12 @@ docker() { printf '%s\n' "$*" >> "$DOCKER_LOG"; }
 # Promotion purges local, creates fresh production, and downloads nothing new.
 : > "$DOCKER_LOG"
 mkdir -p "$TEST_DIR/prod-backups"
-promote_to_production < <(printf 'bad domain\nacme.example\npromote\n\n\n\n\n%s\n\n\n\n\n\n' "$TEST_DIR/prod-backups")
+promote_to_production < <(
+  printf 'bad domain\nacme.example\npromote\n'
+  printf '\n\n\n\n%s\n' "$TEST_DIR/prod-backups"
+  printf '\n\n\n\n'
+  printf '\n\nA\n'
+)
 [[ ! -e "$LOCAL_BASM_ROOT" && ! -e "$OUTPUT_DIR/local-installation-summary.txt" ]]
 [[ ! -e "$LOCAL_CRON_FILE" ]]
 [[ -f "$(update_cron_file "$PRODUCTION_BASM_ROOT")" ]]

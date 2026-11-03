@@ -26,7 +26,21 @@ libvirt/virtiofs example and an existing-deployment migration procedure.
 3. Run the installer as root or with sudo.
 4. Complete the configuration wizard.
 5. Select the desired modules.
-6. Review the generated summary in output/installation-summary.txt.
+6. Review the setup summary, then enter `A` to accept and install, `R` to
+   restart the guide, or `C` to cancel.
+7. Review the generated summary in output/installation-summary.txt.
+
+The wizard groups questions into deployment, organization/backups, service
+addresses/DNS, modules, and ports. Before saving deployment settings or starting
+services, it displays a summary without passwords or tokens. On a normal
+interactive terminal, it clears the visible screen for this review; redirected
+output stays plain text. Enter `A` explicitly to begin installation.
+
+Restart discards the unconfirmed answers and starts from the original defaults
+or saved deployment settings. Cancel leaves saved deployment settings unchanged.
+Preparatory packages and operation-lock directories may already have been
+created before the review. Promotion also uses this review before stopping the
+local stack. Existing module-only and full-profile upgrade commands are unchanged.
 
 For prompts showing a value in square brackets, press Enter to accept that
 default, or type a replacement and press Enter. For example, at

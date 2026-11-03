@@ -10,6 +10,9 @@ Tests cover:
 - Start-page links, optional Fluxer, HTML escaping, custom ports and missing assets;
   local start-page routing preserves existing localhost/IP Nextcloud access.
 - Local/private binding, saved credentials, module upgrades and handovers.
+- Wizard review before saving, explicit accept/restart/cancel, end-of-input
+  rejection, discarded-answer isolation, private summaries and terminal clearing.
+  Promotion cancellation at the final review leaves the local stack running.
 - Data-only configuration parsing and invalid settings.
 - Complete encrypted snapshots and verified staged restores with real Restic.
 - Writable block/virtiofs/NFS/CIFS mount discovery and system-disk warnings.
