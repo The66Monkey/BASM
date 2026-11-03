@@ -7,6 +7,8 @@ is needed. `COMPOSE_BIN` and `RESTIC_BIN` can select standalone validators.
 Tests cover:
 
 - Generated Traefik routes, duplicate keys, service references and Compose shape.
+- Start-page links, optional Fluxer, HTML escaping, custom ports and missing assets;
+  local start-page routing preserves existing localhost/IP Nextcloud access.
 - Local/private binding, saved credentials, module upgrades and handovers.
 - Data-only configuration parsing and invalid settings.
 - Complete encrypted snapshots and verified staged restores with real Restic.

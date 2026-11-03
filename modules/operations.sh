@@ -90,6 +90,8 @@ install_runtime() {
       install -m 700 "$ROOT_DIR/$item" "$destination/$item" || return
     done
     install -m 600 "$ROOT_DIR/VERSION" "$destination/VERSION" || return
+    install -d -m 755 "$destination/docs/images" || return
+    install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/docs/images/mascot.png" || return
     if [[ -d "$ROOT_DIR/migrations" ]]; then
       cp -a "$ROOT_DIR/migrations" "$destination/" || return
     fi
@@ -107,7 +109,9 @@ refresh_routes() (
   mkdir "$stage/config" || return
   BASM_RENDER_DIR="$stage" render_stack || return
   install -m 600 "$stage/config/traefik.yml" "$BASM_ROOT/config/traefik.yml" || return
-  install -m 600 "$stage/config/traefik-static.yml" "$BASM_ROOT/config/traefik-static.yml"
+  install -m 600 "$stage/config/traefik-static.yml" "$BASM_ROOT/config/traefik-static.yml" || return
+  install -d -m 755 "$BASM_ROOT/home" || return
+  install -m 644 "$stage/home/index.html" "$stage/home/mascot.png" "$BASM_ROOT/home/"
 )
 
 install_auto_updates() (
@@ -195,7 +199,7 @@ check_stack() {
 }
 
 check_deployment() {
-  local file snapshots newest used host scheme port endpoint address module timestamp age
+  local file snapshots newest used host scheme port endpoint address module timestamp age home_host
   [[ "${1:-}" == --updating || ! -e "$BASM_ROOT/config/update-in-progress" ]] || fail "An interrupted update needs repair."
   for module in lamp uptime-kuma rustdesk fluxer; do
     if module_selected "$module"; then
@@ -210,7 +214,9 @@ check_deployment() {
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then scheme=http; port="$HTTP_PORT"; fi
   address="$BIND_ADDRESS"
   [[ "$address" != 0.0.0.0 ]] || address=127.0.0.1
-  for endpoint in "$ERP_URL/api/method/ping" "$CLOUD_URL/status.php" "$MAIL_URL/"; do
+  home_host="$PRIMARY_DOMAIN"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then home_host="home.$PRIMARY_DOMAIN"; fi
+  for endpoint in "$home_host/" "$ERP_URL/api/method/ping" "$CLOUD_URL/status.php" "$MAIL_URL/"; do
     host="${endpoint%%/*}"
     curl -fsS --connect-timeout 5 --max-time 20 --noproxy '*' \
       --resolve "$host:$port:$address" "$scheme://$host:$port/${endpoint#*/}" >/dev/null || {

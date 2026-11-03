@@ -123,6 +123,8 @@ update_deployment() (
   install -m 600 "$stage/config/traefik.yml" "$BASM_ROOT/config/traefik.yml" || return
   install -m 600 "$stage/config/traefik-static.yml" "$BASM_ROOT/config/traefik-static.yml" || return
   install -m 600 "$stage/images.json" "$BASM_ROOT/config/images.json" || return
+  install -d -m 755 "$BASM_ROOT/home" || return
+  install -m 644 "$stage/home/index.html" "$stage/home/mascot.png" "$BASM_ROOT/home/" || return
   install -m 755 "$release/templates/erpnext-create-site.sh" "$BASM_ROOT/config/erpnext-create-site.sh" || return
   cp -p "$stage/config/postal/postal.yml" "$BASM_ROOT/config/postal/postal.yml" || return
   for migration in "${MIGRATIONS[@]}"; do

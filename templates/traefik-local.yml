@@ -1,5 +1,10 @@
 http:
   routers:
+    home:
+      rule: "Host(`home.${PRIMARY_DOMAIN}`)"
+      service: home-service
+      entryPoints:
+        - web
     erp:
       rule: "Host(`${ERP_URL}`)"
       service: erp-service
@@ -16,6 +21,10 @@ http:
       entryPoints:
         - web
   services:
+    home-service:
+      loadBalancer:
+        servers:
+          - url: "http://homepage:80"
     erp-service:
       loadBalancer:
         servers:

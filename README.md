@@ -81,6 +81,10 @@ Run `sudo basm update` for a manual update. See
 
 ## Day-to-day operation
 
+Open your main BASM domain over HTTPS for a start page linking ERPNext, Nextcloud,
+Postal administration and enabled Fluxer. Each service still requires its own
+login. No credentials or private management links are published.
+
 Use `sudo basm status`, `sudo basm check`, and `sudo basm logs`.
 For a local install, add `--root /opt/basm-local` before the command.
 Hourly checks detect missing services, stale backups and low disk space.

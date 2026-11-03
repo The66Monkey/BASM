@@ -3,6 +3,20 @@
 Routine tasks for a running BASM server. Paths below assume `/opt/basm`; use
 your configured root, or `/opt/basm-local` for local mode.
 
+## Start page
+
+Open `https://YOUR-DOMAIN/` (include your configured HTTPS port if nonstandard).
+The public start page shows the business name and links to business services;
+it grants no application access. Postal's link is for mail administration, not
+an employee inbox. LAMP, Uptime Kuma, vaults and server access remain private and
+are not linked. Sign in separately to each application.
+
+Local tests use `http://home.localhost:18080/`, or `home.basm.test` with private
+LAN DNS and the selected HTTP port. The existing localhost/IP Nextcloud routes
+remain available. Pages are regenerated from saved settings during installation,
+application updates and module route refreshes, and included in backups/recovery.
+Do not add secrets to the generated `<BASM_ROOT>/home/` directory.
+
 ## Quick reference
 
 | Task | Command or guide |

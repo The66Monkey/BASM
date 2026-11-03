@@ -13,6 +13,7 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/handover/` | For-the-User and For-IT documents (`0700`) |
 | `<BASM_ROOT>/maintenance/` | Installed operator CLI, updater, recovery code and templates |
 | `<BASM_ROOT>/logs/` | Update, backup, health and DDNS logs; `last-failure` |
+| `<BASM_ROOT>/home/` | Generated public start page and mascot; no credentials |
 | `<BASM_ROOT>/config/images.json` | Saved core image digests |
 | `<BASM_ROOT>/config/update-in-progress` | Interrupted-update gate |
 | `<BASM_ROOT>/config/backup-device` | Saved backup filesystem identity; rejects missing or changed mounts |
@@ -29,6 +30,8 @@ for production and `/opt/basm-local` for local mode.
 ## Compose projects and naming
 
 - Core stack: ERPNext, Nextcloud, Postal and Traefik. Restic runs on the host.
+- A static homepage container serves the main production domain through Traefik;
+  it publishes no host port and mounts only the generated page read-only.
 - Optional modules run as separate Compose projects named `<prefix>-lamp`,
   `<prefix>-uptime-kuma`, and `<prefix>-fluxer` (the Fluxer project is managed
   by its upstream `rexctl` CLI).

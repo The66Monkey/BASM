@@ -39,7 +39,7 @@ routes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routes)
 with open(f"{deployment}/config/traefik.yml") as file:
     config = routes.yaml.load(file, Loader=routes.UniqueLoader)["http"]
-expected = {"erp", "mail", "cloud", "http-to-https"}
+expected = {"home", "erp", "mail", "cloud", "http-to-https"}
 if "fluxer" in modules.split():
     expected.add("fluxer")
 assert set(config["routers"]) == expected
@@ -60,6 +60,10 @@ assert services["nextcloud"]["image"] == services["nextcloud-cron"]["image"]
 assert all(service["logging"]["driver"] == "local" for service in services.values())
 assert all(not service["image"].endswith((":latest", ":apache")) for service in services.values())
 assert all("docker.sock" not in str(service) for service in services.values())
+assert "ports" not in services["homepage"]
+assert services["homepage"]["volumes"] == [f"{deployment}/home:/usr/share/nginx/html:ro"]
+assert config["routers"]["home"]["rule"] == "Host(`example.com`)"
+assert config["services"]["home-service"]["loadBalancer"]["servers"] == [{"url": "http://homepage:80"}]
 PY
   if [[ -n "${COMPOSE_BIN:-}" ]]; then
     "$COMPOSE_BIN" --env-file "$BASM_ENV_FILE" -f "$BASM_ROOT/docker-compose.yml" config --format json > "$TEMP/compose.json"

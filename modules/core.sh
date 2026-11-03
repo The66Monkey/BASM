@@ -397,11 +397,24 @@ configure_local_mode() {
   export DEPLOYMENT_MODE BIND_ADDRESS BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL FLUXER_DOMAIN BACKUP_LOCATION
 }
 
+render_homepage() {
+  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer=""
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then scheme=http; port="$HTTP_PORT"; fi
+  if module_selected fluxer; then fluxer="$FLUXER_DOMAIN"; fi
+  install -d -m 755 "$destination/home" || return
+  install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/home/mascot.png" || return
+  /usr/bin/python3 "$ROOT_DIR/templates/render-homepage.py" "$ROOT_DIR/templates/home.html" \
+    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAIL_URL" "$fluxer" \
+    > "$destination/home/index.html" || return
+  chmod 644 "$destination/home/index.html"
+}
+
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
   local fluxer_entrypoint=websecure fluxer_domain=""
   local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
   local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS}'
+  export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   export NEXTCLOUD_TRUSTED_DOMAINS="${CLOUD_URL:-}"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
@@ -418,7 +431,7 @@ render_stack() {
   fi
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$destination/docker-compose.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
-  envsubst '${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
+  envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
     < "$proxy_template" |
     /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" \
       > "$destination/config/traefik.yml" || return
@@ -434,6 +447,7 @@ certificatesResolvers:
       tlsChallenge: {}
 EOF
   fi
+  render_homepage
 }
 
 render_postal_config() {
@@ -1378,6 +1392,8 @@ write_handover() (
     scheme=http
     web_port="$HTTP_PORT"
   fi
+  local home_host="$PRIMARY_DOMAIN"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then home_host="home.$PRIMARY_DOMAIN"; fi
   [[ ! -L "$handover_dir" ]] || fail "Handover directory must not be a symbolic link."
   mkdir -p "$handover_dir" || fail "Cannot create handover directory."
   chmod 700 "$handover_dir" || fail "Cannot protect handover directory."
@@ -1397,6 +1413,10 @@ Installation: ${DEPLOYMENT_MODE:-production}
 Prepared: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
 
 PRIVATE: This document contains the master password for your credential database.
+
+START HERE
+Open $scheme://$home_host:$web_port for links to your business services.
+Each service requires its own sign-in.
 
 YOUR KEEPASS ACCESS
 Open this database with KeePassXC (installed on the server), or another
@@ -1443,6 +1463,10 @@ Prepared: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
 PRIVATE: This document contains passwords. Keep it in a password manager or
 print it and lock it away. Do not email it or put it in a shared cloud folder.
 Ask your installer to hand you this document securely before they leave.
+
+START HERE
+Open $scheme://$home_host:$web_port for links to your business services.
+Each service requires its own sign-in.
 
 YOUR SIGN-IN DETAILS
 Open these addresses in your web browser. Passwords are case-sensitive.
@@ -1606,13 +1630,14 @@ EOF
 3. LOCAL TESTING ONLY: DO NOT FORWARD ANY ROUTER PORTS
 Bind address: $BIND_ADDRESS
 Nextcloud: http://$BIND_ADDRESS:$HTTP_PORT
+Start page: http://$home_host:$HTTP_PORT
 ERPNext: http://$ERP_URL:$HTTP_PORT
 Postal: http://$MAIL_URL:$HTTP_PORT
 With a localhost binding, use the browser on the server itself.
 For LAN testing, rerun the wizard and select the server's private IPv4 as the
 bind address. On each client, map these names to that address in private DNS
 or its hosts file (Linux: /etc/hosts; Windows: C:\Windows\System32\drivers\etc\hosts):
-  $BIND_ADDRESS $ERP_URL $MAIL_URL $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
+  $BIND_ADDRESS $home_host $ERP_URL $MAIL_URL $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
 Use the selected private IPv4 instead of localhost in that entry.
 HTTP is unencrypted: use test data and a trusted network only.
 SMTP is loopback-only on $SMTP_PORT; public mail and HTTPS are not configured.
@@ -1794,6 +1819,7 @@ $(port_summary)
 Local routes use HTTP only; the HTTPS mapping is reserved, not TLS-enabled.
 
 HTTP URLs (no public DNS or certificates required):
+- Start page: http://home.$PRIMARY_DOMAIN:$HTTP_PORT
 - Cloud: http://$BIND_ADDRESS:$HTTP_PORT
 - Cloud: http://$CLOUD_URL:$HTTP_PORT
 - ERP: http://$ERP_URL:$HTTP_PORT
@@ -1802,7 +1828,7 @@ HTTP URLs (no public DNS or certificates required):
 Initial login details:
 $(credential_summary)
 
-For LAN clients, map $ERP_URL, $MAIL_URL and $CLOUD_URL
+For LAN clients, map home.$PRIMARY_DOMAIN, $ERP_URL, $MAIL_URL and $CLOUD_URL
 to $BIND_ADDRESS in each client's hosts file or private DNS.
 Do not forward these ports on your router. HTTP is unencrypted.
 SSH settings and the host firewall are not changed by local mode.
@@ -1831,6 +1857,7 @@ Installed Modules:
 - $modules_list
 
 URLs:
+- Start page: https://$PRIMARY_DOMAIN:$HTTPS_PORT
 - ERP: https://$ERP_URL:$HTTPS_PORT
 - Mail: https://$MAIL_URL:$HTTPS_PORT
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT

@@ -6,6 +6,21 @@ x-service: &service
       max-file: '3'
 
 services:
+  homepage:
+    <<: *service
+    image: nginx:1.30.6-alpine
+    container_name: ${BASM_CONTAINER_PREFIX}-homepage
+    restart: unless-stopped
+    volumes:
+      - ${BASM_ROOT}/home:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - basm-net
+
   traefik:
     <<: *service
     image: traefik:v3

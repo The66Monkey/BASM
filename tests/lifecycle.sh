@@ -153,6 +153,7 @@ export -f docker
 
 (
   BASM_ROOT="$TEST_DIR/fluxer-render"
+  COMPANY_NAME=Acme
   mkdir -p "$BASM_ROOT/config"
   DEPLOYMENT_MODE=production
   BIND_ADDRESS=0.0.0.0

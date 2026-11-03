@@ -1,5 +1,12 @@
 http:
   routers:
+    home:
+      rule: "Host(`${PRIMARY_DOMAIN}`)"
+      service: home-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
     erp:
       rule: "Host(`${ERP_URL}`)"
       service: erp-service
@@ -38,6 +45,10 @@ http:
         permanent: true
 
   services:
+    home-service:
+      loadBalancer:
+        servers:
+          - url: "http://homepage:80"
     erp-service:
       loadBalancer:
         servers:

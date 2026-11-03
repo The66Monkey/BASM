@@ -66,6 +66,13 @@ off-host copy; see [backup and recovery](backup.md).
 
 ## Installer behavior
 
+The main production domain serves a BASM start page with your business name and
+links to ERPNext, Nextcloud, Postal administration and selected Fluxer. It is
+public over HTTPS; each application retains its own authentication. The page
+does not display credentials, SSH instructions, vaults or private management
+listeners. Point the main domain to BASM as well as the application subdomains.
+The static page uses an internal web container, without another published port.
+
 The installer does the following:
 
 - Detects Debian and verifies root access
@@ -164,6 +171,9 @@ It does not change SSH settings, open firewall rules, or configure your router.
 - Published container ports bind to `127.0.0.1`, not all interfaces.
 - HTTP defaults to port 18080. Local routes do not use TLS or request certificates.
 - Cloud: http://localhost:18080, http://127.0.0.1:18080, or http://cloud.localhost:18080.
+- Start page: http://home.localhost:18080 (or `home.basm.test` for LAN mode).
+  Existing localhost/IP Nextcloud routes are unchanged. Add the LAN start-page
+  name to client hosts files or private DNS along with the application names.
 - ERP route: http://erp.localhost:18080.
 - Mail route: http://mail.localhost:18080.
 - Local configuration and generated passwords are stored under `/opt/basm-local/config/` with mode `0600`.

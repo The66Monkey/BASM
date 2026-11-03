@@ -158,6 +158,9 @@ restic_command check --read-data
     printf 'candidate compose\n' > "$BASM_RENDER_DIR/docker-compose.yml"
     printf '{}\n' > "$BASM_RENDER_DIR/config/traefik.yml"
     printf '{}\n' > "$BASM_RENDER_DIR/config/traefik-static.yml"
+    mkdir -p "$BASM_RENDER_DIR/home"
+    printf 'start page\n' > "$BASM_RENDER_DIR/home/index.html"
+    printf 'mascot\n' > "$BASM_RENDER_DIR/home/mascot.png"
   }
   render_postal_config() {
     mkdir -p "$BASM_RENDER_DIR/config/postal" "$BASM_ROOT/config/postal"
@@ -226,7 +229,7 @@ EOF
   rm "$BASM_ROOT/config/disable-auto-updates"
 )
 (
-  BASM_MODULES=basm BIND_ADDRESS=127.0.0.1 HTTPS_PORT=18443 HTTP_PORT=18080
+  BASM_MODULES=basm BIND_ADDRESS=127.0.0.1 HTTPS_PORT=18443 HTTP_PORT=18080 PRIMARY_DOMAIN=localhost
   ERP_URL=erp.localhost MAIL_URL=mail.localhost CLOUD_URL=cloud.localhost
   check_stack() { :; }
   curl() { :; }
