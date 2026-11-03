@@ -72,7 +72,7 @@ database instead; the user document contains only its location and master passwo
 
 At 02:00, applications briefly pause for encrypted Restic snapshots covering
 all modules, configuration, database dumps and recovery image versions
-(7 daily, 4 weekly, 12 monthly). Keep an independent off-host copy.
+(7 daily, 4 weekly, 12 monthly).
 See [backup and recovery](docs/backup.md).
 
 ## How are updates handled?
@@ -119,6 +119,5 @@ without touching core services or data. See
 
 - Software: MIT License — [LICENSE](LICENSE)
 - Documentation: CC BY 4.0 — [LICENSE-docs](LICENSE-docs)
-- Attribution guidance: [ATTRIBUTION.md](ATTRIBUTION.md)
 
-BASM is free to use, adapt, and self-host. If BASM helps your organization or project, a mention of the BASM Framework by [ScandinavianHacking](https://scandinavianhacking.se/) is appreciated.
+BASM is free to use, adapt, and self-host.

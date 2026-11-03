@@ -14,9 +14,8 @@ External data linked by symlinks is not followed; keep supported data beneath
 the deployment root or arrange its backup explicitly.
 
 The default repository is `/var/backups/basm/restic` (local mode:
-`/opt/basm-local/backups/restic`). A local copy alone does not protect against
-disk loss or theft. Keep an independent encrypted off-host copy and the Restic
-password from `config/basm.env`. The backup filesystem identity is recorded;
+`/opt/basm-local/backups/restic`). The Restic password is in `config/basm.env`.
+The backup filesystem identity is recorded;
 a missing or changed mount stops the job instead of writing onto the OS disk.
 
 For a production VM, a dedicated directory on a separate host-attached disk can
@@ -62,7 +61,7 @@ Save a small private recovery kit to another filesystem:
 sudo basm recovery-kit /media/recovery-usb
 ```
 
-On a fresh Debian host, restore the off-host repository to its original path.
+On a fresh Debian host, restore the repository to its original path.
 Keep the original domain, deployment path and backup path. Do **not** run the
 normal installer and do not create the deployment directory.
 

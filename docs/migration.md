@@ -9,8 +9,7 @@ results in a private operator record, not the public source repository.
 `recover.sh` accepts complete BASM-format backups, not an arbitrary legacy
 installation. First save native application backups, configuration,
 encryption/signing keys, image versions and a database-consistent RustDesk
-SQLite backup. Keep a second verified copy before importing into a fresh BASM
-installation. Never copy a running database's raw files or restore another
+SQLite backup. Never copy a running database's raw files or restore another
 MariaDB version's system tables over the replacement.
 
 Restore ERPNext's database and public/private files, preserve its encryption
@@ -85,8 +84,7 @@ privately, not from shared logs or screenshots.
 7. **Networking:** test LAN without VPN and external VPN reconnect. Confirm the
    private app addresses, public VPN endpoint and trusted hostname certificates.
    Verify any kiosk's recurring heartbeat separately.
-8. **Recovery:** take and verify a fresh encrypted backup, keep an independent
-   off-host copy and test replacement-host recovery on an isolated VM. Confirm
+   8. **Recovery:** test replacement-host recovery on an isolated VM. Confirm
    manual host settings, share access and local-only images can be restored.
 9. **Closeout:** retain source disks during a soak period, review OS timezone
    for maintenance schedules, and remove temporary maintenance access grants.

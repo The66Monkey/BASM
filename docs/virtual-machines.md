@@ -22,12 +22,10 @@ Encrypted repository:     /var/backups/basm/restic
 
 These are examples, not deployment-specific values. The share tag is not a
 password. Keep the actual disk UUID, VM definition and mount configuration in a
-private operator record. Keep the Restic password/recovery kit separately.
+private operator record.
 
 This layout protects against guest-disk loss and permits recovery without the
-old VM. It is **not an independent off-host backup**: host loss, theft, ransomware
-or electrical damage may affect both disks. Keep another encrypted copy off-host
-or off-site. A second virtual disk on the application disk, or a hypervisor
+old VM. A second virtual disk on the application disk, or a hypervisor
 snapshot on that disk, does not provide physical disk-failure protection.
 
 Do not pass through a disk to the VM while its filesystem is mounted on the host.
@@ -254,8 +252,7 @@ listed in `sudo basm help` **before** changing the storage.
 - In a scheduled window, reboot the guest and then the hypervisor; confirm mount
   ordering, backups and services recover. Plan a controlled missing-disk boot
   test too. Checking only live XML/fstab is not a reboot test.
-- Keep a private recovery kit and host share/mount settings off-host. On a
-  replacement VM, recreate the share at the original guest path **before**
+- On a replacement VM, recreate the share at the original guest path **before**
   following [replacement-host recovery](backup.md#replacement-host).
   Full recovery intentionally records the replacement filesystem identity.
 

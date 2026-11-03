@@ -177,7 +177,7 @@ For the first adoption of the operator tools, rerun the installer from a
 reviewed checkout during a maintenance window. It installs host Restic and
 validation dependencies, replaces the old backup loops, and performs a guarded
 update with a complete pre-update snapshot. Incompatible upgrades stop before
-application replacement. Preserve an independent backup before adopting this release.
+application replacement.
 Once the tools are installed, use `sudo basm update --release /path/to/checkout`
 for subsequent reviewed releases; rerun the wizard only to change settings.
 

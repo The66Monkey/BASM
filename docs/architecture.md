@@ -62,8 +62,7 @@ dumps; databases and module stacks then stop for a cold, complete snapshot.
 Previously running services restart on success or failure. Restic covers the
 deployment root, including installed code, all module data, saved image digests
 and a Fluxer recovery archive, while excluding logs and the backup destination.
-Retention is seven daily, four weekly and twelve monthly snapshots. An off-host
-copy and independent recovery credentials remain necessary.
+Retention is seven daily, four weekly and twelve monthly snapshots.
 
 ## Automatic updates
 

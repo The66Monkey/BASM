@@ -558,7 +558,6 @@ select_backup_destination() {
   printf '  %s) Custom directory (e.g. an already-mounted network share)\n' "$custom_choice" >&2
   printf 'You can also enter an absolute directory path directly.\n' >&2
   printf 'No disks will be formatted or mounted. For a VM, mount host backup storage in the guest first.\n' >&2
-  printf 'A host-disk backup protects against guest-disk loss; keep a separate off-host copy too.\n' >&2
   while true; do
     read -rp "Backup destination [1] (press Enter to accept): " choice || fail "No backup destination selection received."
     choice="${choice:-1}"
@@ -1453,15 +1452,12 @@ credentials, backup encryption password, and generated private keys.
 Entries start with the installation values. Record password changes in KeePass;
 installer reruns preserve existing entries rather than resetting your edits.
 Ask IT to record any manually created monitoring, server, router, domain-provider,
-internet-provider, and off-site backup accounts in the database too.
+and internet-provider accounts in the database too.
 KeePass is a desktop application, not a web service, and opens no network port.
 
 AUTOMATIC MAINTENANCE
 BASM attempts application updates on January 1 and July 1 at 03:00 (server time).
-Leave the server on. Services may briefly be unavailable. Ask IT to review
-security updates, check backups, arrange an off-site copy, and test a restore.
-Keep an independent copy of the database and master password for recovery;
-the encrypted Restic backup cannot be opened without its password from KeePass.
+Leave the server on. Services may briefly be unavailable.
 
 IF SOMETHING DOES NOT WORK
 Check your internet connection, then ask your IT contact. Do not reinstall or
@@ -1558,9 +1554,6 @@ BACKUPS AND RECOVERY (FOR YOUR IT HELPER)
 Daily encrypted backups: $BACKUP_LOCATION/restic
 Backup encryption password: $RESTIC_PASSWORD
 No backup username is required for this local repository.
-Keep an independent secure copy of this password, not only on this server.
-Backups on the same server do not protect against theft or disk failure.
-Ask IT to arrange an off-site copy and demonstrate a successful restore.
 
 Technical database accounts, not browser logins:
 ERPNext database server: erp-db; username: root; password: $DB_ROOT_PASSWORD
@@ -1628,9 +1621,7 @@ $(if module_selected keepass; then printf '%s\n' \
   'KeePass is enabled: all service credentials are in vaults/admin/credentials.kdbx.' \
   'Restrict this admin vault to owner/IT. Use separate shared and personal employee vaults.' \
   'Record Fluxer administrator credentials in KeePass after interactive setup.' \
-  'Record account changes' \
-  'and manually created logins in KeePass. Deliver an independent recovery copy' \
-  'of the database and master password before relying on encrypted backups.'; fi)
+  'Record account changes and manually created logins in KeePass.'; fi)
 
 2. IDENTIFY THE SERVER AND ROUTER
 Run these commands at the Debian server's terminal:
@@ -1768,10 +1759,8 @@ for production use, and test the peer from outside. Never do this in local mode.
 
 7. CHECK BACKUPS AND RECORD SUPPORT DETAILS
 Read docs/backup.md in the BASM checkout for backup and restore commands.
-Confirm a completed snapshot, arrange an encrypted off-site copy, and test a
-restore to a separate location. Preserve the recovery password independently.
-Do not restore over live business data during a test.
-Record router, DNS provider, server administrator and off-site backup accounts
+Restores require a new staging directory; they do not overwrite live data.
+Record router, DNS provider and server administrator accounts
 in the owner's password manager. BASM cannot supply their existing passwords.
 Never attach the environment file or user document to a public support ticket.
 Rerunning installation regenerates these handovers from saved BASM settings;

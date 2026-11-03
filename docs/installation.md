@@ -61,8 +61,7 @@ Press Enter to keep the default (`/var/backups/basm` in production). This normal
 stores backups on the system disk; the wizard warns if the destination shares
 the system filesystem. It is useful for initial testing but does not protect
 against disk failure. A different partition or virtual disk on the same physical
-disk also does not provide disk-failure protection. Keep an independent encrypted
-off-host copy; see [backup and recovery](backup.md).
+disk also does not provide disk-failure protection.
 
 ## Installer behavior
 
@@ -216,8 +215,7 @@ port 25. Postal's upstream guidance recommends a dedicated host with at least 4 
 RAM and 2 CPU cores.
 
 Restic initializes an encrypted local repository and takes daily snapshots of
-application files, configuration, and database dumps. A local repository is not
-an off-host backup; configure an external copy and test restores.
+application files, configuration, and database dumps.
 
 Optional modules: Fluxer, RustDesk, LAMP, and Uptime Kuma are started automatically when selected
 (each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
@@ -283,8 +281,8 @@ in the module and regenerating its configuration. Uninstall deletes this data.
 Local-to-production promotion also creates a new identity; update client keys.
 
 BASM's complete nightly Restic backup includes the RustDesk data directory and
-stops both services for a consistent SQLite copy. Keep an independent off-host
-repository copy. Restore the saved identity before starting the services.
+stops both services for a consistent SQLite copy. Restore the saved identity
+before starting the services.
 
 ### Local maintenance
 
@@ -367,8 +365,8 @@ a protected `config/credentials.kdbx.pre-share` rollback copy. If both locations
 already contain a database, synchronization stops for administrator review.
 An existing rollback copy is never overwritten; reconcile it manually before
 retrying a migration.
-Keep an independent recovery copy of the database and master password: a Restic
-backup alone cannot recover the password needed to decrypt itself.
+Opening a Restic snapshot requires its password before the vault inside that
+snapshot can be accessed.
 
 Machine-readable service settings remain in the protected environment file;
 this option removes individual credentials from the human handover documents,
@@ -483,7 +481,6 @@ The BASM stack intentionally uses upstream projects and their official install g
 
 - Use update.sh to pull new images and recreate the core and module services
 - Use uninstall.sh to remove the stack and generated volumes
-- Keep backups in a dedicated storage location outside the live service path
 
 ## Suggested defaults
 

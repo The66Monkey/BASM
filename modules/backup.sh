@@ -188,7 +188,7 @@ initialize_repository() {
   backup_filesystem > "$BASM_ROOT/config/backup-device" || return
   chmod 600 "$BASM_ROOT/config/backup-device"
   if [[ "$(stat -c %d "$BACKUP_LOCATION")" == "$(stat -c %d "$BASM_ROOT")" ]]; then
-    warn "Backups share the data filesystem. Arrange an independent off-host copy."
+    warn "Backups share the data filesystem."
   fi
 }
 

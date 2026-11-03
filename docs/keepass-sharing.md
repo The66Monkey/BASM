@@ -82,8 +82,8 @@ For example, store a protected export in `config/admin-share-recovery/`
 (configuration, account identifiers, Samba password hash and ACLs) so subsequent
 BASM snapshots include it. Refresh that export after changing share accounts or
 permissions; it is not maintained automatically. Treat the export as a secret.
-Keep an independent copy of the KDBX master password; don't store the sole
-Restic decryption key inside the repository encrypted by that key.
+Opening a Restic snapshot requires its decryption key before the vault inside
+that snapshot can be accessed.
 
 ## Separate team vault
 

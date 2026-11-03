@@ -34,8 +34,7 @@ must remain separate. Accounts created manually must be recorded by IT.
 
 The database and `<BASM_ROOT>/config/keepass-master-password` are mode `0600` and
 are included in deployment backups. Runtime secrets remain in the root-only
-environment file. Preserve an independent database and master-password copy for
-recovery; the Restic password is inside the database. Existing vault entries are
+environment file. The Restic password is inside the database. Existing vault entries are
 preserved when regenerating handovers.
 
 ## Network exposure
@@ -54,8 +53,7 @@ preserved when regenerating handovers.
 
 ## Backups and updates
 
-- Restic repositories are encrypted. The default repository is on the host and
-  does not protect against disk or host loss; an off-host copy is required.
+- Restic repositories are encrypted; the default repository is on the host.
 - Database dumps are root-only.
 - Both manual and automatic updates abort if their complete pre-update backup
   fails. Installer actions and operator commands share a deployment lock.
