@@ -104,16 +104,33 @@ without touching core services or data. See
 
 ## Documentation
 
-- [Installation](docs/installation.md)
-- [Production VMs and backup storage](docs/virtual-machines.md)
-- [Reinstalling & Upgrading](docs/reinstalling.md)
-- [Operations](docs/operations.md)
-- [Architecture](docs/architecture.md)
-- [Service layout](docs/service-layout.md)
-- [Security model](docs/security-model.md)
-- [Router setup](docs/router-setup.md)
-- [Backup](docs/backup.md)
-- [Troubleshooting](docs/troubleshooting.md)
+Start with installation, then use the relevant operations or reference guide:
+
+1. [Installation guide](docs/installation.md) — install BASM, choose modules,
+   configure services and test a local setup.
+2. [Operations guide](docs/operations.md) — run maintenance, manage updates,
+   check service health and configure notifications.
+3. [Router and network setup](docs/router-setup.md) — configure DNS, port
+   forwarding and access alongside DEN.
+4. [Backup and recovery](docs/backup.md) — operate backups and recover data or
+   move to a replacement host.
+5. [Troubleshooting](docs/troubleshooting.md) — resolve common installation,
+   service, network and backup issues.
+6. [Reinstalling or upgrading](docs/reinstalling.md) — safely remove, reinstall,
+   upgrade or move an existing deployment.
+7. [Migration and acceptance](docs/migration.md) — plan a migration and verify
+   manually migrated services.
+8. [Security model](docs/security-model.md) — understand secrets, handover
+   documents, network exposure and update safeguards.
+9. [KeePass vault sharing](docs/keepass-sharing.md) — keep administrator,
+   team and personal vaults separate.
+10. [Production VMs and backup storage](docs/virtual-machines.md) — configure
+    persistent host-disk backup storage for a production VM.
+11. [Service layout](docs/service-layout.md) — find deployment files, services,
+    hostnames and ports.
+12. [Architecture notes](docs/architecture.md) — understand BASM's components,
+    configuration and operating model.
+13. [Testing](docs/testing.md) — review remaining live acceptance requirements.
 
 ## License
 

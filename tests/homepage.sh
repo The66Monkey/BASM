@@ -44,6 +44,9 @@ hosts = ["erp", "cloud", "mail"] + (["chat"] if "fluxer" in modules.split() else
 assert parsed.links == [f"{scheme}://{host}.example.com{suffix}/" for host in hosts] + ["https://github.com/The66Monkey/BASM"]
 assert company in "".join(parsed.text)
 assert "Welcome to your BASM" in "".join(parsed.text)
+assert "sudo less /opt/basm/handover/for-the-user.txt" in "".join(parsed.text)
+assert "/opt/basm-local/handover/for-the-user.txt" in "".join(parsed.text)
+assert "Keep this information private" in "".join(parsed.text)
 assert not parsed.scripts
 assert "must-not-be-published" not in page
 assert "3001" not in page and "8080" not in page
