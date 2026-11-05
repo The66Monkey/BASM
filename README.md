@@ -27,9 +27,10 @@ See [backend certificates and proxy configuration](docs/operations.md#basm-behin
 
 ## Quick start
 
-A production install needs a **static public IPv4 address** and a DNS domain
-(for example from [deSEC](https://desec.io)). Without a static IP, choose
-`non-static` in the wizard; see [operations](docs/operations.md#dynamic-ip-non-static-installs).
+A production install needs a reachable public IPv4 address and a DNS domain
+(for example from [deSEC](https://desec.io)). Dynamic IPv4 with automatic
+deSEC updates is the default; choose static IP in the wizard if appropriate.
+See [dynamic-IP operation](docs/operations.md#dynamic-ip-non-static-installs).
 
 **Minimum system requirements:**
 - Debian 12 or 13

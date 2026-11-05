@@ -160,14 +160,14 @@ the six-month schedule.
 
 ## Dynamic IP (non-static installs)
 
-Select `N` or `non-static` and supply a deSEC token. The DDNS cron job checks every
-four hours, updating A records for the root, ERP, mail, cloud, `mx`, and selected
-Fluxer when the public IPv4 changes. All names must belong to the same deSEC
-domain. Logs: `logs/ddns.log`.
+New production installs default to dynamic-IP mode. The DDNS cron job checks
+every 15 minutes, updating A records for the root, ERP, mail, cloud, `mx`, and
+selected Fluxer when the public IPv4 changes. All names must belong to the same
+deSEC domain. Logs: `logs/ddns.log`.
 
-Access may be unavailable for up to roughly four hours after an address change.
-Dynamic IPs can also harm mail deliverability. See [DNS setup](router-setup.md)
-for records DDNS does not manage.
+Access may be unavailable for up to roughly 15 minutes after an address change.
+Dynamic IPs can also affect mail deliverability, and DDNS does not change PTR
+records. See [DNS setup](router-setup.md) for records DDNS does not manage.
 
 ## Private management services
 

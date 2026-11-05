@@ -67,7 +67,9 @@ contact. Stalwart receives external SMTP on TCP 25, stores user mailboxes, and
 provides IMAP and authenticated SMTP submission. Its first-run setup listener
 binds only to loopback; access it through an SSH tunnel.
 
-Real self-hosted delivery still needs correct MX/SPF/DKIM/DMARC records, a
-stable public IP with matching reverse DNS, and an ISP/host that permits
-inbound and outbound TCP 25. Publish Stalwart's DKIM record. The mailbox service
-uses an embedded database and does not need another MariaDB.
+Real self-hosted delivery needs correct MX/SPF/DKIM/DMARC records, a reachable
+public IP, and a network path that permits inbound and outbound TCP 25. Dynamic
+IPv4 is supported and updates the managed deSEC A records. Reverse DNS is
+controlled by the IP address-range owner; when it cannot be changed, outbound
+delivery may be less reliable. Publish Stalwart's DKIM record. The mailbox
+service uses an embedded database and does not need another MariaDB.

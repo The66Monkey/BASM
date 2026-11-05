@@ -151,7 +151,9 @@ generated DNS zone file, merging SPF and DMARC with existing records rather
 than adding duplicates or replacing unrelated TXT records. Ensure the mail
 host and the autoconfig, autodiscover, mta-sts and ua-auto-config names resolve
 before expecting a valid certificate. Do not bypass certificate warnings.
-Ask the ISP to set reverse DNS (PTR) for the public IP to {mail_host}.
+Reverse DNS (PTR) is controlled by the IP address-range owner, not deSEC.
+Without PTR control, outbound delivery may be less reliable, but BASM can
+still host and send mail.
 
 For ERPNext email, create a dedicated Stalwart sender account and configure
 the ERPNext outgoing Email Account with {mail_host}, port 465, SSL/TLS, and

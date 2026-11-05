@@ -155,10 +155,14 @@ if grep -q '^POSTAL_' "$BASM_ENV_FILE"; then exit 1; fi
   DNS_FILE="$TEST_DIR/fluxer-dns.txt"
   write_dns_records "$DNS_FILE"
   grep -Fq '(Fluxer chat: chat.acme.example)' "$DNS_FILE"
-  grep -Fq '"subname":"chat","type":"A","ttl":3600,"records":["$PUBLIC_IP"]' "$DNS_FILE"
+  grep -Fq '"subname":"chat","type":"A","ttl":300,"records":["$PUBLIC_IP"]' "$DNS_FILE"
+  grep -Fq '"subname":"mx","type":"A","ttl":300,"records":["$PUBLIC_IP"]' "$DNS_FILE"
   BASM_MODULES=basm
   write_dns_records "$DNS_FILE"
   if grep -Fq 'chat               A      PUBLIC_IP' "$DNS_FILE"; then exit 1; fi
+  IP_MODE=static
+  write_dns_records "$DNS_FILE"
+  grep -Fq '"subname":"mx","type":"A","ttl":3600,"records":["$PUBLIC_IP"]' "$DNS_FILE"
 )
 
 (

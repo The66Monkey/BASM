@@ -13,7 +13,7 @@ done
 for answer in n N non-static NON-STATIC; do
   [[ "$(prompt_ip_mode <<< "$answer")" == non-static ]]
 done
-[[ "$(prompt_ip_mode <<< '')" == static ]]
+[[ "$(prompt_ip_mode <<< '')" == non-static ]]
 [[ "$(prompt_ip_mode non-static <<< '')" == non-static ]]
 [[ "$(printf 'invalid\nN\n' | prompt_ip_mode)" == non-static ]]
 
@@ -253,14 +253,33 @@ grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
 (
   BASM_CRON_DIR="$TEST_DIR/cron.d"
   systemctl() { :; }
-  curl() { if [[ "$*" == *api.ipify.org* ]]; then printf '203.0.113.7'; else { cat; printf '%s\n' "$*"; } > "$TEST_DIR/curl-request"; fi; }
+  curl() {
+    case "$*" in
+      *api.ipify.org*)
+        if [[ "${DDNS_FAIL_LOOKUPS:-no}" == yes ]]; then printf 'invalid'; else printf 'not-an-ip'; fi
+        ;;
+      *checkip.amazonaws.com*)
+        if [[ "${DDNS_FAIL_LOOKUPS:-no}" == yes ]]; then printf '999.0.0.1'; else printf '203.0.113.7'; fi
+        ;;
+      *)
+        { cat; printf '%s\n' "$*"; } > "$TEST_DIR/curl-request"
+        ;;
+    esac
+  }
   export -f curl
   export TEST_DIR
   install_ddns_updater
-  grep -Fq "17 */4 * * * root /bin/bash \"$BASM_ROOT/maintenance/ddns-update.sh\" \"$BASM_ROOT\"" "$(ddns_cron_file "$BASM_ROOT")"
+  grep -Fq "*/15 * * * * root /bin/bash \"$BASM_ROOT/maintenance/ddns-update.sh\" \"$BASM_ROOT\"" "$(ddns_cron_file "$BASM_ROOT")"
   [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
   grep -Fq 'Authorization: Token abcdefghijklmnopqrstuvwxyz12' "$TEST_DIR/curl-request"
   grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
+  export DDNS_FAIL_LOOKUPS=yes
+  if bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"; then
+    printf 'DDNS updater accepted invalid IPv4 lookup responses.\n' >&2
+    exit 1
+  fi
+  [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
+  unset DDNS_FAIL_LOOKUPS
   IP_MODE=static install_ddns_updater
   [[ ! -e "$(ddns_cron_file "$BASM_ROOT")" && ! -e "$BASM_ROOT/maintenance/ddns-update.sh" ]]
 )

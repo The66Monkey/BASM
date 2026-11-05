@@ -542,7 +542,7 @@ prompt_value() {
 
 prompt_ip_mode() {
   local choice
-  choice="$(prompt_value "Public IP type: S = static, N = non-static (keeps deSEC DNS updated)" "${1:-static}" '[[ "${1,,}" == s || "${1,,}" == n || "${1,,}" == static || "${1,,}" == non-static ]]')" || return
+  choice="$(prompt_value "Public IP type: N = dynamic (updates deSEC), S = static" "${1:-non-static}" '[[ "${1,,}" == s || "${1,,}" == n || "${1,,}" == static || "${1,,}" == non-static ]]')" || return
   case "${choice,,}" in
     s|static) printf 'static\n' ;;
     n|non-static) printf 'non-static\n' ;;
@@ -785,7 +785,7 @@ ERP_URL="$ERP_URL"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
 MAILBOX_HOSTNAME="$MAILBOX_HOSTNAME"
-IP_MODE="${IP_MODE:-static}"
+IP_MODE="${IP_MODE:-non-static}"
 DESEC_TOKEN="${DESEC_TOKEN:-}"
 BACKUP_LOCATION="$BACKUP_LOCATION"
 BASM_ROOT="$BASM_ROOT"
@@ -901,7 +901,7 @@ collect_wizard_settings() {
     ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     MAIL_URL="$(prompt_value "Mail alias URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-    IP_MODE="$(prompt_ip_mode "${IP_MODE:-static}")"
+    IP_MODE="$(prompt_ip_mode "${IP_MODE:-non-static}")"
     if [[ "$IP_MODE" == non-static ]]; then
       local token=""
       for attempt in 1 2 3; do
@@ -1050,12 +1050,12 @@ ddns_cron_file() {
   printf '%s/basm-ddns-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
 }
 
-# Non-static IP installs check the public IPv4 every 4 hours and update deSEC.
+# Dynamic-IP installs check the public IPv4 every 15 minutes and update deSEC.
 install_ddns_updater() (
   umask 077
   local maintenance_dir="$BASM_ROOT/maintenance" cron_file
   cron_file="$(ddns_cron_file "$BASM_ROOT")"
-  if [[ "${DEPLOYMENT_MODE:-production}" == local || "${IP_MODE:-static}" != non-static ]]; then
+  if [[ "${DEPLOYMENT_MODE:-production}" == local || "${IP_MODE:-non-static}" != non-static ]]; then
     rm -f "$cron_file" "$maintenance_dir/ddns-update.sh"
     return 0
   fi
@@ -1067,12 +1067,12 @@ install_ddns_updater() (
   cat > "$cron_file" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-17 */4 * * * root /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT"
+*/15 * * * * root /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT"
 EOF
   chmod 644 "$cron_file" || fail "Cannot set cron permissions."
   systemctl enable --now cron || fail "Cannot enable the DNS update scheduler."
-  /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT" || warn "Initial deSEC DNS update failed; see $BASM_ROOT/logs/ddns.log. Cron retries every 4 hours."
-  log "deSEC DNS updates scheduled every 4 hours for the non-static public IP."
+  /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT" || warn "Initial deSEC DNS update failed; see $BASM_ROOT/logs/ddns.log. Cron retries every 15 minutes."
+  log "deSEC DNS updates scheduled every 15 minutes for the dynamic public IP."
 )
 
 run_module_install() {
@@ -1426,8 +1426,10 @@ dns_subname() {
 # Writes copy-paste DNS records for self-hosted Stalwart mail.
 write_dns_records() {
   local file="$1" d="$PRIMARY_DOMAIN"
+  local a_ttl=3600
   local erp_sub cloud_sub mail_sub fluxer_sub
   local mailbox_host="${MAILBOX_HOSTNAME:-mx.$PRIMARY_DOMAIN}"
+  if [[ "${IP_MODE:-non-static}" == non-static ]]; then a_ttl=300; fi
   erp_sub="$(dns_subname "$ERP_URL")"
   cloud_sub="$(dns_subname "$CLOUD_URL")"
   mail_sub="$(dns_subname "$MAIL_URL")"
@@ -1450,7 +1452,7 @@ $(if module_selected fluxer; then printf '  %-17s A      PUBLIC_IP   (Fluxer cha
   autodiscover      CNAME  $mailbox_host.
   mta-sts           CNAME  $mailbox_host.
   ua-auto-config    CNAME  $mailbox_host.
-$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
+$(if [[ "${IP_MODE:-non-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
 
 Mail domain $d (Stalwart receives and sends user mail)
   @                 MX     10 $mailbox_host.
@@ -1467,27 +1469,29 @@ DKIM
 
 If you also keep a separate fixed record elsewhere, note that only ONE SPF TXT
 record may exist at the domain apex. Replace any older SPF record instead of
-adding a second.
-Ask the ISP to set reverse DNS (PTR) of PUBLIC_IP to $mailbox_host.
+adding a second. Reverse DNS (PTR) is controlled by the IP address-range owner;
+deSEC does not manage it. Without PTR control, outbound delivery may be less
+reliable, but BASM can still host and send mail.
 
 One-step setup for deSEC
 ------------------------
 Paste the following into a terminal on any computer. It asks for a deSEC API
-token (hidden), detects the public IPv4, and creates or updates the records
+token, detects the public IPv4, and creates or updates the records
 above, except TXT records. Add or merge the SPF, DMARC and DKIM TXT records
-manually so existing verification and policy records are not overwritten. The
-token is not stored.
+manually so existing verification and policy records are not overwritten.
+This one-time command does not save its token; BASM's dynamic updater uses the
+token entered in the installer.
 
 read -rsp 'deSEC API token: ' TOKEN; echo
 PUBLIC_IP="\$(curl -4 -fsS https://api.ipify.org)"
 BODY="\$(cat <<DNSJSON
 [
- {"subname":"","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
- {"subname":"$erp_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
- {"subname":"$cloud_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
- {"subname":"$mail_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
-$(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":3600,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub"; fi)
- {"subname":"mx","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
+ {"subname":"","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
+ {"subname":"$erp_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
+ {"subname":"$cloud_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
+ {"subname":"$mail_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
+$(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub" "$a_ttl"; fi)
+ {"subname":"mx","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
  {"subname":"autoconfig","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
  {"subname":"autodiscover","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
  {"subname":"mta-sts","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
@@ -1502,8 +1506,9 @@ printf 'header = "Authorization: Token %s"\\n' "\$TOKEN" | curl -fsS -K - -X PAT
   "https://desec.io/api/v1/domains/$d/rrsets/" -o /dev/null -w 'HTTP %{http_code}\\n'
 unset TOKEN
 
-A result of HTTP 200 means the records were saved. DNS changes can take a few
-minutes to appear. Verify with:
+A result of HTTP 200 means the records were saved. Dynamic-IP installs use a
+300-second TTL for A records so address changes propagate sooner. DNS changes
+can take a few minutes to appear. Verify with:
   dig +short MX $d
   dig +short TXT $d
   dig +short A $mailbox_host
@@ -1776,9 +1781,9 @@ EOF
 3. CONNECT THE DOMAIN
 In the router's Internet / WAN status, find the public IPv4. If it is private,
 starts with 100.64.-100.127., or differs from your internet-facing public IP,
-ask the ISP about carrier-grade NAT or an upstream router. Port forwarding
-alone will not work through carrier-grade NAT. Request a public, preferably
-static IPv4 and ask whether inbound AND outbound TCP 25 are allowed.
+port forwarding alone will not work through carrier-grade NAT or an upstream
+router you cannot configure. Use a reachable public IPv4 and confirm that the
+network path allows inbound AND outbound TCP 25. A dynamic IPv4 is supported.
 At the domain provider, create the DNS records in:
   $handover_dir/dns-records.txt
 It lists the A, MX, SPF, DMARC and mail records and, for deSEC, a paste-ready
@@ -1791,13 +1796,17 @@ $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
   mx.$PRIMARY_DOMAIN
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
-unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '\n%s' \
-  "This install uses a non-static IP: every 4 hours cron updates these deSEC" \
+unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-non-static}" == non-static ]]; then printf '\n%s' \
+  "This install uses a dynamic IP: every 15 minutes cron updates these deSEC" \
   "records if the public IPv4 changed. Log: $BASM_ROOT/logs/ddns.log"; fi)
 
 4. FORWARD THE ROUTER PORTS
 Open NAT / Port Forwarding / Virtual Server. Add one rule per line below.
-For every rule, destination is the reserved private server IPv4 from step 2.
+For a direct setup, every rule targets the reserved private BASM IPv4 from step
+2. If BASM runs in a VM behind a separate DEN edge, do not add direct HTTP/HTTPS
+rules to this table: public TCP 80/443 go to DEN and its edge routes web traffic
+to BASM. TCP 25 goes directly to the BASM VM. Never forward the same public
+port to both machines.
 Service        Protocol    External port    Internal (server) port
 HTTP           TCP         $HTTP_PORT               $HTTP_PORT
 HTTPS          TCP         $HTTPS_PORT              $HTTPS_PORT
@@ -1847,8 +1856,9 @@ Management -> Domains, publish the complete generated DNS zone file, merging
 SPF and DMARC with existing records. Confirm that
 autoconfig, autodiscover, mta-sts and ua-auto-config resolve to
 $MAILBOX_HOSTNAME before expecting a valid certificate. Do not bypass
-certificate warnings. Ask the ISP to set reverse DNS (PTR) for the public IP
-to $MAILBOX_HOSTNAME.
+certificate warnings. Reverse DNS (PTR) is controlled by the IP address-range
+owner; BASM and deSEC do not change it. Without PTR control, outbound delivery
+may be less reliable, but inbound mail and the rest of the service still work.
 
 To send invoices from ERPNext, create a dedicated Stalwart account for the
 sender address, then add an outgoing Email Account in ERPNext using

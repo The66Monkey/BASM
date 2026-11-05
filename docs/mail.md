@@ -80,10 +80,11 @@ and IMAPS 993, but not POP3S 995; omit the generated `_pop3s._tcp` and
 `_995._tcp` records unless POP3S is separately enabled and reachable.
 
 The default ACME certificate request also covers `autoconfig`, `autodiscover`,
-`mta-sts` and `ua-auto-config` under the mail domain. Each name must resolve to
-the BASM server, and every upstream proxy must pass the `mx` and alias SNI names
-through to Stalwart for TLS-ALPN validation and preserve client addresses with
-PROXY protocol. BASM Traefik routes to `stalwart-mail-proxy:8443` over its
+`mta-sts` and `ua-auto-config` under the mail domain. Each name must reach BASM
+directly or through its configured edge, and every upstream proxy must pass the
+`mx` and alias SNI names through to Stalwart for TLS-ALPN validation and
+preserve client addresses with PROXY protocol. BASM Traefik routes to
+`stalwart-mail-proxy:8443` over its
 isolated network using PROXY protocol v2. BASM Traefik must trust only the
 exact upstream-edge LAN address in its PROXY protocol entrypoint; the edge
 sends PROXY protocol v2 to BASM. A TLS-terminating edge needs explicit TCP
@@ -91,23 +92,28 @@ passthrough routes for
 the ACME `acme-tls/1` challenge on all mail hostnames. Use DNS-01 for
 edge-managed certificates so the edge does not intercept the same challenge.
 Do not bypass certificate warnings in a mail client.
-Have the ISP or hosting provider set reverse DNS (PTR) for the public IP to
-`mx.<domain>`.
-
 Self-hosting avoids a third-party email provider, but still depends on a working
-domain/DNS service, stable public IP, matching reverse DNS, and a network
-provider that permits inbound and outbound TCP 25. When BASM sits behind an
-upstream VM or gateway, forward public TCP 25 end-to-end to Stalwart; do not
-send SMTP through an HTTP reverse proxy. Ports 465 and 993 must be reachable
+domain/DNS service, a reachable public IPv4 address, and a network path that
+permits inbound and outbound TCP 25. BASM supports dynamic IPv4: the installer
+sets up deSEC updates for its managed A records by default, checking every
+15 minutes. A changed address can take up to 15 minutes to appear in DNS.
+Reverse DNS (PTR) is controlled by the address-range owner and is not managed
+by deSEC or BASM. If you do not have reverse-DNS control, mail can still be
+received and sent, but some recipient servers may reject or junk outbound mail
+because of the address's PTR or reputation.
+
+When BASM sits behind an upstream VM or gateway, forward public TCP 25
+end-to-end to Stalwart; do not send SMTP through an HTTP reverse proxy. Ports
+465 and 993 must be reachable
 from the networks where authorized mail clients run. For VPN-only access, keep
 them private and ensure VPN routing and DNS resolve `mx.<domain>` to BASM while
 preserving that hostname for TLS. Do not expose them publicly unless remote
 mail-client access is intended. If LAN clients use private DNS and public
 ports 465/993 are not forwarded, add a private DNS rewrite for
 `mx.<domain>` to BASM's LAN address; leave the public `mx` record pointed at
-the public mail address. Residential or previously used IP addresses may have
-poor sender reputation. Local-mode installs are for testing and cannot receive
-internet mail.
+the public mail address. Residential, dynamic, or previously used IP addresses may have poor sender
+reputation. Local-mode installs are for testing and cannot receive internet
+mail.
 
 ## Thunderbird
 

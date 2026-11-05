@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keeps the deSEC A records of a non-static-IP BASM install on the current public IPv4.
+# Keeps the deSEC A records of a dynamic-IP BASM install on the current public IPv4.
 set -euo pipefail
 umask 077
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -12,15 +12,31 @@ LOG_FILE="$BASM_ROOT/logs/ddns.log"
 
 BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
 load_deployment_env
-[[ "${IP_MODE:-static}" == non-static && -n "${DESEC_TOKEN:-}" ]] || exit 0
+[[ "${IP_MODE:-non-static}" == non-static && -n "${DESEC_TOKEN:-}" ]] || exit 0
 acquire_operation_lock check
 install_operation_trap "Dynamic DNS update"
 
 note() { printf '%s: %s\n' "$(date -Is)" "$1" >> "$LOG_FILE"; }
 
-current_ip="$(curl -4 -fsS --max-time 20 https://api.ipify.org || true)"
-if [[ ! "$current_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-  note "Could not determine the public IPv4 address."
+valid_ipv4() {
+  local octet
+  local -a octets
+  [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  IFS=. read -r -a octets <<< "$1"
+  for octet in "${octets[@]}"; do
+    (( 10#$octet <= 255 )) || return 1
+  done
+}
+
+current_ip=""
+for endpoint in https://api.ipify.org https://checkip.amazonaws.com; do
+  if response="$(curl -4 -fsS --max-time 10 "$endpoint" 2>/dev/null)" && valid_ipv4 "$response"; then
+    current_ip="$response"
+    break
+  fi
+done
+if [[ -z "$current_ip" ]]; then
+  note "Could not determine the public IPv4 address from either lookup service."
   exit 1
 fi
 last_ip="$(cat "$STATE_FILE" 2>/dev/null || true)"

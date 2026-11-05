@@ -1,6 +1,7 @@
 # Router and Network Setup
 
-BASM is designed for a small-business environment with a single server behind a home or office router.
+BASM is designed for a small-business network and can run directly on a server
+or in a Debian VM behind a router or DEN edge.
 
 For step-by-step instructions using your installation's actual ports, ask the
 installer for the generated **For IT** document at
@@ -13,13 +14,13 @@ apply only to production installations.
 
 ## Prerequisites
 
-- A public IP on the router or ISP-provided upstream service
+- A reachable public IPv4 on the router or an upstream service; dynamic IPv4 is supported
 - A local DHCP reservation or static private IP for the Debian host
 - Administrative access to the router
 
 ## Required port forwarding
 
-Forward the following ports to the BASM server:
+For a single BASM server directly behind the router, forward:
 
 - TCP 80 -> BASM host
 - TCP 443 -> BASM host
@@ -33,6 +34,26 @@ mail clients, keep those ports private and use private DNS so the canonical
 When Fluxer is selected, also forward its configured voice-media TCP and UDP
 ports to the same ports on the BASM host. The values are listed in the private
 IT handover. Do not forward Fluxer's internal proxy listener.
+
+### BASM in a VM or behind DEN
+
+BASM is supported inside its own Debian VM. Ports used by separate guests do
+not conflict at the guest operating-system level, and the installer can only
+detect listeners inside the BASM guest. Public router ports are a separate
+constraint: each forwarded port can target only one LAN address unless an
+explicit proxy or gateway routes it.
+
+For a BASM VM behind a DEN edge, use the public edge for TCP 80/443 and route
+the BASM web hostnames through that edge to the BASM guest. Forward public TCP
+25 directly to the BASM guest for Stalwart; SMTP is not HTTP and must not go
+through an HTTP reverse proxy. Forward TCP 465/993 directly only if off-site
+mail-client access is wanted. Keep BASM's guest IP reserved in the router.
+
+Example: TCP 80/443 -> DEN's LAN address; TCP 25 -> BASM VM's LAN address.
+Do not also forward TCP 80/443 directly to BASM while they are assigned to
+DEN. If BASM owns the public web ports instead, forward them to BASM and do not
+assign those same ports to DEN. See [BASM behind a separate HTTPS edge](operations.md#basm-behind-a-separate-https-edge)
+for the edge's TLS and client-address requirements.
 
 These are the standard ports. With custom server ports, forward public TCP 80
 to the selected HTTP port, TCP 443 to the selected HTTPS port, and TCP 25 to
@@ -59,10 +80,13 @@ Create A records for:
 - chat.example.com -> public IP (when Fluxer is selected)
 
 Mail also needs the MX, SPF, DKIM, and DMARC records specified in the generated
-DNS handover, plus reverse DNS (PTR) arranged with the ISP. Stalwart handles
-inbound and outbound SMTP, user mailboxes, IMAP and authenticated SMTP
-submission. Confirm the ISP permits inbound and outbound TCP 25 and provides a
-public IP without carrier-grade NAT.
+DNS handover. Dynamic IPv4 is supported: BASM's default deSEC updater refreshes
+its A records every 15 minutes. Stalwart handles inbound and outbound SMTP,
+user mailboxes, IMAP and authenticated SMTP submission. Confirm the network
+path permits inbound and outbound TCP 25 and provides a reachable public IP
+without carrier-grade NAT. PTR is controlled by the IP address-range owner,
+not deSEC; lack of PTR access does not prevent hosting mail but can affect
+outbound delivery.
 
 ### Entering records in deSEC
 
@@ -78,20 +102,21 @@ current public IPv4 address. For customized hostnames, use the generated
 
 | Record set type | Subname | Preference (MX only) | Hostname / Content / IPv4 address | TTL |
 | --- | --- | --- | --- | --- |
-| A | *(blank)* | | `PUBLIC_IPV4` | 3600 |
-| A | `erp` | | `PUBLIC_IPV4` | 3600 |
-| A | `cloud` | | `PUBLIC_IPV4` | 3600 |
-| A | `mail` | | `PUBLIC_IPV4` | 3600 |
-| A | `mx` | | `PUBLIC_IPV4` | 3600 |
+| A | *(blank)* | | `PUBLIC_IPV4` | 300 |
+| A | `erp` | | `PUBLIC_IPV4` | 300 |
+| A | `cloud` | | `PUBLIC_IPV4` | 300 |
+| A | `mail` | | `PUBLIC_IPV4` | 300 |
+| A | `mx` | | `PUBLIC_IPV4` | 300 |
 | CNAME | `autoconfig` | | `mx.example.com.` | 3600 |
 | CNAME | `autodiscover` | | `mx.example.com.` | 3600 |
 | MX | *(blank)* | 10 | `mx.example.com.` | 3600 |
-| TXT | *(blank)* | | `"v=spf1 a mx ~all"` | 3600 |
+| TXT | *(blank)* | | `"v=spf1 mx -all"` | 3600 |
 | TXT | `_dmarc` | | `"v=DMARC1; p=none; rua=mailto:postmaster@example.com"` | 3600 |
 
 deSEC requires **surrounding double quotation marks for TXT content**; enter
 them as shown. MX Preference is a separate field: enter `10` there, not as
 part of the Hostname. The trailing dot marks an absolute DNS hostname.
+The A-record TTL is 300 seconds so dynamic address changes propagate sooner.
 Only add `chat` (or your configured Fluxer hostname) if BASM Fluxer is selected.
 
 Publish the exact DKIM record shown by Stalwart. Retain old DKIM selectors
@@ -106,7 +131,7 @@ changes, so coordinate mail DNS with the migration.
 
 ### Sharing a domain with DEN
 
-BASM's non-static updater manages A records for the root, ERP, mail, cloud and
+BASM's dynamic-IP updater manages A records for the root, ERP, mail, cloud and
 `mx`, plus Fluxer only when selected. DEN manages `vpn`, `home`, `media`, `photos`,
 `files`, `git`, and its enabled `chat`/`downloads` records. Separate ownership
 lets both update the same zone; avoid configuring both to manage the same name.

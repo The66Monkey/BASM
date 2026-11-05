@@ -99,10 +99,12 @@ See [testing](testing.md) for automated coverage and remaining live acceptance.
 
 ## Dynamic DNS
 
-For `non-static` installs, `/etc/cron.d/basm-ddns-*` runs every 4 hours and
-updates deSEC A records for the primary, ERP, mail, and cloud hostnames when
-the public IPv4 changes. The token lives only in `<BASM_ROOT>/config/basm.env`;
-changes are logged to `<BASM_ROOT>/logs/ddns.log`.
+For dynamic-IP installs, `/etc/cron.d/basm-ddns-*` runs every 15 minutes and
+updates deSEC A records for the primary, ERP, mail, cloud and `mx` hostnames
+(plus Fluxer when selected) when the public IPv4 changes. The updater tries two
+public IPv4 lookup services. The token lives in
+`<BASM_ROOT>/config/basm.env`; changes and lookup failures are logged to
+`<BASM_ROOT>/logs/ddns.log`.
 
 ## Modules
 

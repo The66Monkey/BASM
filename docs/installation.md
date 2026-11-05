@@ -6,7 +6,7 @@ This document explains how to install BASM on a fresh Debian server and bring th
 
 - Fresh Debian 12 or compatible Debian-based host
 - Root access or sudo privileges
-- Public static IP or routed network access
+- Public IPv4 or routed network access; dynamic IPv4 is supported
 - Domain names for ERP, mail, and cloud subdomains
 - A router that allows port forwarding for HTTP and HTTPS traffic
 
@@ -22,7 +22,8 @@ libvirt/virtiofs example and an existing-deployment migration procedure.
 ## Steps
 
 1. Copy the BASM project to the Debian host.
-2. Review the defaults in config/defaults.env.
+2. Use config/defaults.env as a reference for shipped values; enter any custom
+   settings in the setup wizard.
 3. Run the installer as root or with sudo.
 4. Complete the configuration wizard.
 5. Select the desired modules.
@@ -47,10 +48,12 @@ default, or type a replacement and press Enter. For example, at
 `ERP URL [erp.example.com] (press Enter to accept):`, pressing Enter keeps
 `erp.example.com`. Prompts without a default require an answer.
 
-For **Public IP type**, enter `S` for static or `N` for non-static (dynamic IP).
-Letters are case-insensitive; `static` and `non-static` also work. Press Enter
-to accept the displayed default. Non-static mode asks for a deSEC API token and
-enables automatic DNS updates.
+For **Public IP type**, BASM defaults to `N` (dynamic IP) and updates the
+domain's deSEC A records automatically. Enter `S` if you have a static IP.
+Letters are case-insensitive; `static` and `non-static` also work. Dynamic mode
+asks for a deSEC API token once and stores it with the deployment settings.
+The updater checks every 15 minutes and only contacts deSEC when the public IP
+or managed hostnames change. You can choose `S` if your DNS is managed elsewhere.
 
 ### Choosing a timezone
 
@@ -229,8 +232,9 @@ private address is not a firewall or a guarantee against upstream NAT forwarding
 ERPNext and Nextcloud are initialized with generated administrator credentials.
 Stalwart provides local test mailboxes, but local mode cannot validate real mail
 delivery. Production mail requires working public DNS, correct MX/SPF/DKIM/DMARC
-records, a stable IP address, and a provider that permits inbound and outbound
-TCP port 25.
+records, a reachable public IPv4 address, and a network path that permits
+inbound and outbound TCP port 25. Dynamic IP installs keep BASM's managed A
+records current; changing addresses can still affect delivery reputation.
 
 Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps.
