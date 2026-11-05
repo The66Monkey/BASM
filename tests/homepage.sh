@@ -6,7 +6,7 @@ TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 BASM_ROOT="$TEMP/live"
 COMPANY_NAME='Business <script>alert("bad")</script> & {{SERVICES}}'
-ERP_URL=erp.example.com CLOUD_URL=cloud.example.com MAIL_URL=mail.example.com
+ERP_URL=erp.example.com CLOUD_URL=cloud.example.com MAIL_URL=mail.example.com MAILBOX_HOSTNAME=mx.example.com
 FLUXER_DOMAIN=chat.example.com
 RESTIC_PASSWORD=must-not-be-published
 for mode in production local; do
@@ -40,7 +40,7 @@ class Page(HTMLParser):
 parsed = Page()
 parsed.feed(page)
 scheme, suffix = ("https", "" if port == "443" else ":" + port) if mode == "production" else ("http", ":19080")
-hosts = ["erp", "cloud", "mail"] + (["chat"] if "fluxer" in modules.split() else [])
+hosts = ["erp", "cloud", "mx"] + (["chat"] if "fluxer" in modules.split() else [])
 assert parsed.links == [f"{scheme}://{host}.example.com{suffix}/" for host in hosts] + ["https://github.com/The66Monkey/BASM"]
 assert company in "".join(parsed.text)
 assert "Welcome to your BASM" in "".join(parsed.text)

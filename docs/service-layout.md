@@ -23,13 +23,14 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/modules/fluxer/` | Fluxer `rexctl` settings and managed Compose project |
 | `<BACKUP_LOCATION>/fluxer/` | Upstream Fluxer archives |
 | `<BASM_ROOT>/data/fluxer-recovery.tar.zst` | Latest Fluxer archive copied into the complete snapshot |
+| `<BASM_ROOT>/data/stalwart/` | Stalwart mailboxes and embedded database |
 | `<BASM_ROOT>/data/db-backups` | Database dumps (`0700`/`0600`) |
 | `<BASM_ROOT>/backups/restic` | Default local Restic repository (local mode) |
 | `/etc/cron.d/` | Deployment-specific update, backup, check and DDNS jobs |
 
 ## Compose projects and naming
 
-- Core stack: ERPNext, Nextcloud, Postal and Traefik. Restic runs on the host.
+- Core stack: ERPNext, Nextcloud, Stalwart and Traefik. Restic runs on the host.
 - A static homepage container serves the main production domain through Traefik;
   it publishes no host port and mounts only the generated page read-only.
 - Optional modules run as separate Compose projects named `<prefix>-lamp`,
@@ -41,21 +42,26 @@ for production and `/opt/basm-local` for local mode.
 
 ## Hostnames
 
-| Mode | ERP | Mail | Cloud |
+| Mode | ERP | Mail and administration | Cloud |
 | --- | --- | --- | --- |
-| Production | `erp.<domain>` | `mail.<domain>` | `cloud.<domain>` |
-| Local (loopback) | `erp.localhost` | `mail.localhost` | `cloud.localhost` |
-| Local (LAN) | `erp.basm.test` | `mail.basm.test` | `cloud.basm.test` |
+| Production | `erp.<domain>` | `mx.<domain>` | `cloud.<domain>` |
+| Local (loopback) | `erp.localhost` | `mx.localhost` | `cloud.localhost` |
+| Local (LAN) | `erp.basm.test` | `mx.basm.test` | `cloud.basm.test` |
+
+The optional `mail.<domain>` alias redirects to the canonical `mx.<domain>`
+hostname.
 
 ## Ports
 
 Only Traefik publishes the shared web ports. Application ports stay on the
 private Compose network. See the port table in
-[installation.md](./installation.md#port-setup). Postal SMTP is published on TCP 25
-in production and `127.0.0.1:2525` in local mode.
+[installation.md](./installation.md#port-setup). Stalwart SMTP is published on
+TCP 25 in production and `127.0.0.1:2525` in local mode. Stalwart publishes SMTP
+submission on TCP 465 and IMAP over TLS on TCP 993 in production; its first-run
+setup listener is loopback-only.
 
 ## Repository templates
 
-`templates/` holds the Compose, Traefik, Postal, systemd, and DDNS templates
+`templates/` holds the Compose, Traefik, systemd, and DDNS templates
 rendered at install time. `modules/*.sh` contain the module installers and
 `install.sh`, `update.sh`, `recover.sh`, `uninstall.sh`, and `bin/basm` are the entry points.

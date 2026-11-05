@@ -12,7 +12,14 @@ http:
         - web
     mail:
       rule: "Host(`${MAIL_URL}`)"
-      service: mail-service
+      middlewares:
+        - mail-canonical
+      service: noop@internal
+      entryPoints:
+        - web
+    mailbox:
+      rule: "Host(`${MAILBOX_HOSTNAME}`)"
+      service: mailbox-service
       entryPoints:
         - web
     cloud:
@@ -29,11 +36,17 @@ http:
       loadBalancer:
         servers:
           - url: "http://erpnext-frontend:8080"
-    mail-service:
+    mailbox-service:
       loadBalancer:
         servers:
-          - url: "http://postal-web:5000"
+          - url: "http://stalwart-mail:8080"
     cloud-service:
       loadBalancer:
         servers:
           - url: "http://nextcloud:80"
+  middlewares:
+    mail-canonical:
+      redirectRegex:
+        regex: "^https?://[^/]+/(.*)"
+        replacement: "http://${MAILBOX_HOSTNAME}/$1"
+        permanent: true

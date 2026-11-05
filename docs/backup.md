@@ -10,6 +10,8 @@ logical dumps, configuration, credentials, handovers, installed maintenance
 code, and every optional module. Fluxer's upstream archive and manager are
 saved inside the deployment too. Docker image digests are recorded so recovery
 does not silently install newer images. Logs and the backup repository are excluded.
+Stalwart's mailbox data and configuration are included in the cold snapshot;
+its embedded database is stopped with the other writers and needs no MariaDB dump.
 External data linked by symlinks is not followed; keep supported data beneath
 the deployment root or arrange its backup explicitly.
 
@@ -79,12 +81,19 @@ remains an IT responsibility.
 
 ### Manually migrated services
 
-Compose stacks placed under `<BASM_ROOT>/modules/*/docker-compose.yml` are
-discovered by maintenance and recovery. Their in-tree bind-mounted data is
-included in snapshots, but this does not add application-specific database
-dumps or health checks. Test each service after recovery. Keep external source
-migration bundles and any locally built/imported container images in a separate
-protected recovery kit; a local-only image ID cannot be pulled from a registry.
+BASM manages only the installer modules listed in `BASM_MODULES`. Other Compose
+stacks under `<BASM_ROOT>/modules/` are not stopped, updated, or health-checked
+by BASM maintenance. Their files under `<BASM_ROOT>` may be present in a
+filesystem snapshot, but BASM does not make application-specific database
+dumps or guarantee a consistent backup for those services. Test each service
+after recovery. Keep external source migration bundles and locally
+built/imported container images in a separate protected recovery kit; a
+local-only image ID cannot be pulled from a registry.
+
+For managed services, BASM records registry image digests. If Docker no longer
+reports registry metadata for a running image, BASM retains the Compose digest
+already configured for that service. An unpinned local image still blocks a
+complete backup.
 See the [migration guide](migration.md#manually-migrated-services) for DNS/VPN
 and untrusted heartbeat integration considerations.
 

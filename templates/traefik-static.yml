@@ -3,11 +3,14 @@ entryPoints:
     address: ":80"
   websecure:
     address: ":443"
+    proxyProtocol:
+      trustedIPs: ${TRAEFIK_TRUSTED_IPS}
     forwardedHeaders:
       trustedIPs: ${TRAEFIK_TRUSTED_IPS}
 providers:
   file:
     filename: "/etc/traefik/dynamic.yml"
+    watch: true
 log:
   level: INFO
 ping: {}

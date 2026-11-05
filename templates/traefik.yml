@@ -16,9 +16,11 @@ http:
         certResolver: letsencrypt
     mail:
       rule: "Host(`${MAIL_URL}`)"
-      service: mail-service
       entryPoints:
         - websecure
+      middlewares:
+        - mail-canonical
+      service: noop@internal
       tls:
         certResolver: letsencrypt
     cloud:
@@ -43,6 +45,11 @@ http:
         scheme: https
         port: "${HTTPS_PORT}"
         permanent: true
+    mail-canonical:
+      redirectRegex:
+        regex: "^https?://[^/]+/(.*)"
+        replacement: "https://${MAILBOX_HOSTNAME}/$1"
+        permanent: true
 
   services:
     home-service:
@@ -53,11 +60,38 @@ http:
       loadBalancer:
         servers:
           - url: "http://erpnext-frontend:8080"
-    mail-service:
-      loadBalancer:
-        servers:
-          - url: "http://postal-web:5000"
     cloud-service:
       loadBalancer:
         servers:
           - url: "http://nextcloud:80"
+
+tcp:
+  routers:
+    mailbox:
+      rule: "HostSNI(`${MAILBOX_HOSTNAME}`)"
+      entryPoints:
+        - websecure
+      service: mailbox-service
+      tls:
+        passthrough: true
+    mailbox-service-hosts:
+      rule: >-
+        HostSNI(`autoconfig.${PRIMARY_DOMAIN}`) ||
+        HostSNI(`autodiscover.${PRIMARY_DOMAIN}`) ||
+        HostSNI(`mta-sts.${PRIMARY_DOMAIN}`) ||
+        HostSNI(`ua-auto-config.${PRIMARY_DOMAIN}`)
+      entryPoints:
+        - websecure
+      service: mailbox-service
+      tls:
+        passthrough: true
+  services:
+    mailbox-service:
+      loadBalancer:
+        serversTransport: mailbox-proxy
+        servers:
+          - address: "stalwart-mail-proxy:8443"
+  serversTransports:
+    mailbox-proxy:
+      proxyProtocol:
+        version: 2

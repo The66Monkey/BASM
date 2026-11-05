@@ -24,7 +24,6 @@ for module in lamp uptime-kuma rustdesk wireguard; do
 done
 FAIL_STOP=false FAIL_BACKUP=false FAIL_START=false FAIL_DUMP=false
 stack_command() {
-  local file="$1"
   shift
   printf '%s %s\n' "${file#"$BASM_ROOT"/}" "$*" >> "$CALLS"
   local marker="$TEMP/$(basename "$(dirname "$file")").stopped"
@@ -104,6 +103,27 @@ restic_command check --read-data
   printf 'original compose\n' > "$BASM_ROOT/docker-compose.yml"
 )
 (
+  stack_command() {
+    local file="$1"
+    shift
+    case "$*" in
+      'config --format json')
+        printf '{"services":{"app":{"image":"example/app@sha256:%064d"}}}\n' 0 ;;
+      'ps --all -q app') printf 'container-id\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  docker() {
+    case "$*" in
+      'inspect --format {{.Image}} container-id') printf 'sha256:local-image-id\n' ;;
+      'image inspect --format {{json .RepoDigests}} sha256:local-image-id') printf '[]\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  record_stack_images "$BASM_ROOT/docker-compose.yml" "$TEMP/configured-images.json"
+  jq -e '.services.app.image == ("example/app@sha256:" + ("0" * 64))' "$TEMP/configured-images.json" >/dev/null
+)
+(
   acquire_operation_lock
   expect_failure bash -c 'exec 8>"$1"; flock -n 8' _ "$BASM_ROOT/logs/update.lock"
 )
@@ -134,19 +154,19 @@ restic_command check --read-data
   image_version() {
     case "$1" in nextcloud) printf '%s\n' "${NEXT_VERSION:-33}" ;; *) printf '%s\n' "${DB_VERSION:-11.8}" ;; esac
   }
-  old='{"nextcloud":"33","erp-db":"11.8","nextcloud-db":"11.8","postal-db":"11.8","erpnext-backend":"16"}'
-  candidate='{"services":{"nextcloud":{"image":"nextcloud:33-apache"},"erp-db":{"image":"mariadb:11.8"},"nextcloud-db":{"image":"mariadb:11.8"},"postal-db":{"image":"mariadb:11.8"},"erpnext-backend":{"image":"frappe/erpnext:v16"}}}'
+  old='{"nextcloud":"33","erp-db":"11.8","nextcloud-db":"11.8","postal-db":"10.11","erpnext-backend":"16"}'
+  candidate='{"services":{"nextcloud":{"image":"nextcloud:33-apache"},"erp-db":{"image":"mariadb:11.8"},"nextcloud-db":{"image":"mariadb:11.8"},"erpnext-backend":{"image":"frappe/erpnext:v16"}}}'
   validate_update_versions "$old" "$candidate" "$TEMP"
   NEXT_VERSION=35 expect_failure validate_update_versions "$old" "$candidate" "$TEMP"
   NEXT_VERSION=32 expect_failure validate_update_versions "$old" "$candidate" "$TEMP"
   DB_VERSION=12.0 expect_failure validate_update_versions "$old" "$candidate" "$TEMP"
   DB_VERSION=10.11 expect_failure validate_update_versions "$old" "$candidate" "$TEMP"
   mkdir "$TEMP/migrations"
-  for service in erp-db nextcloud-db postal-db; do
+  for service in erp-db nextcloud-db; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$TEMP/migrations/$service-11.8-12.0.sh"
   done
   DB_VERSION=12.0 validate_update_versions "$old" "$candidate" "$TEMP"
-  [[ ${#MIGRATIONS[@]} == 3 ]]
+  [[ ${#MIGRATIONS[@]} == 2 ]]
   for hour in 00 01 02 03 04 05; do scheduled_update_window "$hour"; done
   for hour in 06 12 23 invalid; do expect_failure scheduled_update_window "$hour"; done
 )
@@ -161,10 +181,6 @@ restic_command check --read-data
     mkdir -p "$BASM_RENDER_DIR/home"
     printf 'start page\n' > "$BASM_RENDER_DIR/home/index.html"
     printf 'mascot\n' > "$BASM_RENDER_DIR/home/mascot.png"
-  }
-  render_postal_config() {
-    mkdir -p "$BASM_RENDER_DIR/config/postal" "$BASM_ROOT/config/postal"
-    printf 'test postal config\n' > "$BASM_RENDER_DIR/config/postal/postal.yml"
   }
   basm_compose() {
     printf 'compose %s\n' "$*" >> "$CALLS"
@@ -230,7 +246,7 @@ EOF
 )
 (
   BASM_MODULES=basm BIND_ADDRESS=127.0.0.1 HTTPS_PORT=18443 HTTP_PORT=18080 PRIMARY_DOMAIN=localhost
-  ERP_URL=erp.localhost MAIL_URL=mail.localhost CLOUD_URL=cloud.localhost
+  ERP_URL=erp.localhost MAIL_URL=mail.localhost MAILBOX_HOSTNAME=mx.localhost CLOUD_URL=cloud.localhost
   check_stack() { :; }
   curl() { :; }
   restic_command() {

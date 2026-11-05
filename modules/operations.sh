@@ -216,7 +216,7 @@ check_deployment() {
   [[ "$address" != 0.0.0.0 ]] || address=127.0.0.1
   home_host="$PRIMARY_DOMAIN"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then home_host="home.$PRIMARY_DOMAIN"; fi
-  for endpoint in "$home_host/" "$ERP_URL/api/method/ping" "$CLOUD_URL/status.php" "$MAIL_URL/"; do
+  for endpoint in "$home_host/" "$ERP_URL/api/method/ping" "$CLOUD_URL/status.php" "$MAILBOX_HOSTNAME/"; do
     host="${endpoint%%/*}"
     curl -fsS --connect-timeout 5 --max-time 20 --noproxy '*' \
       --resolve "$host:$port:$address" "$scheme://$host:$port/${endpoint#*/}" >/dev/null || {

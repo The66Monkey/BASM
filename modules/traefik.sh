@@ -13,19 +13,23 @@ http:
       service: erp-service
     mail:
       rule: "Host(`$MAIL_URL`)"
-      service: mail-service
+      middlewares:
+        - mail-canonical
+      service: noop@internal
     cloud:
       rule: "Host(`$CLOUD_URL`)"
       service: cloud-service
+  middlewares:
+    mail-canonical:
+      redirectRegex:
+        regex: "^https?://[^/]+/(.*)"
+        replacement: "${WEB_PROTOCOL:-https}://$MAILBOX_HOSTNAME/\$1"
+        permanent: true
   services:
     erp-service:
       loadBalancer:
         servers:
           - url: "http://erpnext:8080"
-    mail-service:
-      loadBalancer:
-        servers:
-          - url: "http://postal:5000"
     cloud-service:
       loadBalancer:
         servers:

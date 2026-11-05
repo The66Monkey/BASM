@@ -8,6 +8,7 @@ MODULES_DIR="$ROOT_DIR/modules"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 source "$ROOT_DIR/modules/core.sh"
+source "$ROOT_DIR/modules/releases.sh"
 
 DOCKER_LOG="$TEST_DIR/docker.log"
 APT_LOG="$TEST_DIR/apt.log"
@@ -21,6 +22,26 @@ systemctl() { :; }
 port_in_use() { return 1; }
 check_debian() { :; }
 export -f docker
+
+BASM_ROOT="$TEST_DIR/stalwart-storage"
+prepare_stalwart_storage
+[[ "$(stat -c '%a' "$BASM_ROOT/config/stalwart")" == 750 ]]
+[[ "$(stat -c '%a' "$BASM_ROOT/data/stalwart")" == 750 ]]
+DISCOVERY_ROOT="$TEST_DIR/module-discovery"
+mkdir -p "$DISCOVERY_ROOT/modules/lamp" "$DISCOVERY_ROOT/modules/migrated-heartbeat"
+: > "$DISCOVERY_ROOT/modules/lamp/docker-compose.yml"
+: > "$DISCOVERY_ROOT/modules/migrated-heartbeat/docker-compose.yml"
+(
+  BASM_MODULES='basm lamp'
+  [[ "$(module_compose_files "$DISCOVERY_ROOT")" == "$DISCOVERY_ROOT/modules/lamp/docker-compose.yml" ]]
+)
+BASM_ENV_FILE="$TEST_DIR/legacy-mail.env"
+printf 'COMPANY_NAME="Legacy mail test"\nPOSTAL_DB_PASSWORD="discard after backup"\nPOSTAL_WEB_PROTOCOL="https"\n' > "$BASM_ENV_FILE"
+chmod 600 "$BASM_ENV_FILE"
+remove_legacy_postal_settings
+grep -Fqx 'COMPANY_NAME="Legacy mail test"' "$BASM_ENV_FILE"
+if grep -q '^POSTAL_' "$BASM_ENV_FILE"; then exit 1; fi
+[[ "$(stat -c '%a' "$BASM_ENV_FILE")" == 600 ]]
 
 (
   BASM_ROOT="$TEST_DIR/rustdesk-root"
@@ -128,6 +149,7 @@ export -f docker
   PRIMARY_DOMAIN=acme.example
   ERP_URL=erp.acme.example
   MAIL_URL=mail.acme.example
+  MAILBOX_HOSTNAME=mx.acme.example
   CLOUD_URL=cloud.acme.example
   FLUXER_DOMAIN=chat.acme.example
   DNS_FILE="$TEST_DIR/fluxer-dns.txt"
@@ -137,6 +159,71 @@ export -f docker
   BASM_MODULES=basm
   write_dns_records "$DNS_FILE"
   if grep -Fq 'chat               A      PUBLIC_IP' "$DNS_FILE"; then exit 1; fi
+)
+
+(
+  BASM_ROOT="$TEST_DIR/dns-refresh"
+  PRIMARY_DOMAIN=acme.example
+  ERP_URL=erp.acme.example
+  MAIL_URL=mail.acme.example
+  MAILBOX_HOSTNAME=mx.acme.example
+  CLOUD_URL=cloud.acme.example
+  BASM_MODULES=basm
+  mkdir -p "$BASM_ROOT/handover"
+  printf 'Legacy Postal records\n' > "$BASM_ROOT/handover/dns-records.txt"
+  printf 'Preserve user credentials\n' > "$BASM_ROOT/handover/for-the-user.txt"
+  chmod 600 "$BASM_ROOT/handover/dns-records.txt"
+  refresh_dns_handover
+  grep -Fq 'mta-sts           CNAME  mx.acme.example.' "$BASM_ROOT/handover/dns-records.txt"
+  grep -Fq 'ua-auto-config    CNAME  mx.acme.example.' "$BASM_ROOT/handover/dns-records.txt"
+  if grep -Fq '_imaps._tcp' "$BASM_ROOT/handover/dns-records.txt"; then exit 1; fi
+  if grep -Fq '_submissions._tcp' "$BASM_ROOT/handover/dns-records.txt"; then exit 1; fi
+  if grep -Fq '"type":"TXT"' "$BASM_ROOT/handover/dns-records.txt"; then exit 1; fi
+  sed -n '/^BODY="$(cat <<DNSJSON$/,/^DNSJSON$/p' "$BASM_ROOT/handover/dns-records.txt" |
+    sed '1d;$d' | jq -e 'all(.[]; .type != "TXT") and any(.[]; .subname == "mta-sts" and .type == "CNAME")' >/dev/null
+  if grep -Fq 'Postal' "$BASM_ROOT/handover/dns-records.txt"; then exit 1; fi
+  grep -Fqx 'Preserve user credentials' "$BASM_ROOT/handover/for-the-user.txt"
+  [[ "$(stat -c '%a' "$BASM_ROOT/handover/dns-records.txt")" == 600 ]]
+)
+
+(
+  BASM_ROOT="$TEST_DIR/postal-handover"
+  PRIMARY_DOMAIN=acme.example
+  MAILBOX_HOSTNAME=mx.acme.example
+  MAILBOX_SETUP_PORT=18082
+  SMTP_PORT=25
+  MAILBOX_SUBMISSION_PORT=465
+  MAILBOX_IMAPS_PORT=993
+  mkdir -p "$BASM_ROOT/handover"
+  cat > "$BASM_ROOT/handover/for-it.txt" <<'EOF'
+At the domain provider, create the DNS records in:
+  /example/handover/dns-records.txt
+It lists the A, MX, SPF, DMARC and Postal records and, for deSEC, a paste-ready
+command that creates them.
+4. FORWARD THE ROUTER PORTS
+Postal SMTP    TCP         25               25
+If HTTPS uses a custom port, ALSO forward external TCP 443 to internal 443.
+Public mail requires external TCP 25.
+5. FINISH MAIL SETUP
+Sign in to Postal using the user document. Configure its mail domains.
+Postal is not an IMAP/POP mailbox or webmail service.
+RUSTDESK CLIENT SETUP AND RECOVERY
+Keep this operator note.
+EOF
+  chmod 600 "$BASM_ROOT/handover/for-it.txt"
+  refresh_legacy_postal_handover
+  if grep -Fq 'Postal' "$BASM_ROOT/handover/for-it.txt"; then exit 1; fi
+  grep -Fq 'Optional mail-client access from outside the LAN/VPN:' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'Mailbox SMTP   TCP         465              465' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'Mailbox IMAP   TCP         993              993' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'Internet mail delivery requires external TCP 25.' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'only when off-network mail-client access is intended' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'mx.acme.example' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'those origins can fail with "Unknown client id."' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'bind 0.0.0.0:8443, implicit TLS enabled' "$BASM_ROOT/handover/for-it.txt"
+  if grep -Fq 'http://127.0.0.1:18082/admin/' "$BASM_ROOT/handover/for-it.txt"; then exit 1; fi
+  grep -Fq 'Keep this operator note.' "$BASM_ROOT/handover/for-it.txt"
+  [[ "$(stat -c '%a' "$BASM_ROOT/handover/for-it.txt")" == 600 ]]
 )
 
 (
@@ -161,6 +248,7 @@ export -f docker
   PRIMARY_DOMAIN=acme.example
   ERP_URL=erp.acme.example
   MAIL_URL=mail.acme.example
+  MAILBOX_HOSTNAME=mx.acme.example
   CLOUD_URL=cloud.acme.example
   FLUXER_DOMAIN=chat.acme.example
   ADMIN_EMAIL=ops@acme.dk
@@ -199,7 +287,7 @@ BASM_CRON_DIR="$TEST_DIR/cron.d"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
-run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
+run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\ncustom\n19080\n19443\n12525\n12465\n12993\n18082\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
 [[ "$BASM_MODULES" == basm ]]
 configure_system
 install_selected_modules
@@ -221,9 +309,10 @@ IT_HANDOVER="$LOCAL_BASM_ROOT/handover/for-it.txt"
 [[ "$(stat -c '%a' "$IT_HANDOVER")" == 600 ]]
 grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
 grep -Fq "Initial password: $NEXTCLOUD_ADMIN_PASSWORD" "$USER_HANDOVER"
-grep -Fq "Initial password: $POSTAL_ADMIN_PASSWORD" "$USER_HANDOVER"
 grep -Fq "Username: $NEXTCLOUD_ADMIN_USER" "$USER_HANDOVER"
-grep -Fq "Username: $ADMIN_EMAIL" "$USER_HANDOVER"
+grep -Fq 'Email administration (Stalwart)' "$USER_HANDOVER"
+grep -Fq 'Address: http://mx.localhost:19080/admin' "$USER_HANDOVER"
+grep -Fq 'IT creates the first administrator and mailbox during first-time setup.' "$USER_HANDOVER"
 grep -Fq "Backup encryption password: $RESTIC_PASSWORD" "$USER_HANDOVER"
 grep -Fq 'http://erp.localhost:19080' "$USER_HANDOVER"
 grep -Fq 'Need professional support? Scandinavian Hacking' "$USER_HANDOVER"
@@ -354,7 +443,7 @@ WG_KEY="$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")"
   [[ "$(grep '^PrivateKey' "$LOCAL_BASM_ROOT/modules/wireguard/config.conf")" == "$WG_KEY" ]]
 )
 ( source "$ROOT_DIR/modules/wireguard.sh"; module_install )
-[[ "$(grep -c 'start_period: 300s' "$LOCAL_BASM_ROOT/docker-compose.yml")" == 3 ]]
+[[ "$(grep -c 'start_period: 300s' "$LOCAL_BASM_ROOT/docker-compose.yml")" == 2 ]]
 if grep -Fq docker.sock "$LOCAL_BASM_ROOT/docker-compose.yml"; then exit 1; fi
 grep -Fq 'NEXTCLOUD_TRUSTED_DOMAINS: "cloud.localhost localhost 127.0.0.1"' "$LOCAL_BASM_ROOT/docker-compose.yml"
 
@@ -436,13 +525,14 @@ grep -Fqx 'BASM_MODULES="basm lamp wireguard uptime-kuma rustdesk"' "$PROD_ENV"
 grep -Fqx 'PORT_PROFILE="standard"' "$PROD_ENV"
 grep -Fqx 'HTTP_PORT=80' "$PROD_ENV"
 grep -Fqx 'SMTP_PORT=25' "$PROD_ENV"
-grep -Fqx 'POSTAL_WEB_PROTOCOL="https"' "$PROD_ENV"
+grep -Fqx 'WEB_PROTOCOL="https"' "$PROD_ENV"
+if grep -Eq '^POSTAL_' "$PROD_ENV"; then exit 1; fi
 grep -Fqx "BACKUP_LOCATION=\"$TEST_DIR/prod-backups\"" "$PROD_ENV"
 if grep -Fq "$LOCAL_DB_PASSWORD" "$PROD_ENV"; then exit 1; fi
 if grep -Fq basm-local "$PRODUCTION_BASM_ROOT/docker-compose.yml"; then exit 1; fi
 grep -Fqx 'certificatesResolvers:' "$PRODUCTION_BASM_ROOT/config/traefik-static.yml"
 grep -Fqx '  dashboard: true' "$PRODUCTION_BASM_ROOT/config/traefik-static.yml"
-grep -Fq 'web_protocol: "https"' "$PRODUCTION_BASM_ROOT/config/postal/postal.yml"
+if grep -Fq 'postal-' "$PRODUCTION_BASM_ROOT/docker-compose.yml"; then exit 1; fi
 grep -Fq 'name: basm-lamp' "$PRODUCTION_BASM_ROOT/modules/lamp/docker-compose.yml"
 grep -Fq '"127.0.0.1:8080:80"' "$PRODUCTION_BASM_ROOT/modules/lamp/docker-compose.yml"
 grep -Fq "$PRODUCTION_BASM_ROOT/docker-compose.yml --env-file $PROD_ENV up -d" "$DOCKER_LOG"
@@ -459,7 +549,12 @@ IT_HANDOVER="$PRODUCTION_BASM_ROOT/handover/for-it.txt"
 grep -Fq 'https://erp.acme.example:443' "$USER_HANDOVER"
 grep -Fq "Initial password: $ERP_ADMIN_PASSWORD" "$USER_HANDOVER"
 grep -Fq 'HTTP           TCP         80               80' "$IT_HANDOVER"
-grep -Fq 'Postal SMTP    TCP         25               25' "$IT_HANDOVER"
+grep -Fq 'Mail SMTP      TCP         25               25' "$IT_HANDOVER"
+grep -Fq 'Optional mail-client access from outside the LAN/VPN:' "$IT_HANDOVER"
+grep -Fq 'Internet mail delivery requires external' "$IT_HANDOVER"
+grep -Fq 'those origins can fail with "Unknown client id."' "$IT_HANDOVER"
+grep -Fq 'bind 0.0.0.0:8443, implicit TLS enabled' "$IT_HANDOVER"
+if grep -Fq 'http://127.0.0.1:18082/admin/' "$IT_HANDOVER"; then exit 1; fi
 if grep -Fq "$LOCAL_DB_PASSWORD" "$USER_HANDOVER"; then exit 1; fi
 if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summary.txt"; then exit 1; fi
 (
@@ -468,7 +563,7 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   write_summary
   grep -Fq 'https://erp.acme.example:19443' "$USER_HANDOVER"
   grep -Fq 'HTTP           TCP         19080               19080' "$IT_HANDOVER"
-  grep -Fq 'Postal SMTP    TCP         25               12525' "$IT_HANDOVER"
+  grep -Fq 'Mail SMTP      TCP         25               12525' "$IT_HANDOVER"
   grep -Fq 'ALSO forward external TCP 80 to internal 19080' "$IT_HANDOVER"
   grep -Fq 'ALSO forward external TCP 443 to internal 19443' "$IT_HANDOVER"
   [[ "$(stat -c '%a' "$USER_HANDOVER")" == 600 ]]

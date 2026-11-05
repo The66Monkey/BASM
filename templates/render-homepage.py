@@ -8,7 +8,7 @@ import sys
 def render(template, company, scheme, port, erp, cloud, mail, fluxer):
     suffix = "" if (scheme, port) in {("https", "443"), ("http", "80")} else f":{port}"
     services = [(erp, "ERPNext - Business"), (cloud, "Nextcloud - Files"),
-                (mail, "Postal - Mail administration")]
+                (mail, "Email - Mailboxes")]
     if fluxer:
         services.append((fluxer, "Fluxer - Chat and calls"))
     links = "\n".join(

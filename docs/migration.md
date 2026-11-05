@@ -13,12 +13,32 @@ SQLite backup. Never copy a running database's raw files or restore another
 MariaDB version's system tables over the replacement.
 
 Restore ERPNext's database and public/private files, preserve its encryption
-key, and run migrations for the target application version. Restore Postal's
-application databases and signing/Rails secrets, retaining BASM's database
-connection settings and intended DNS hostname layout. Preserving RustDesk's
-server keys avoids changing the identity configured on its clients. Imported
-application logins may differ from the fresh-install handover; update the
-private vault accordingly.
+key, and run migrations for the target application version. For mail, restore
+the Stalwart data and configuration as a consistent set and verify the
+domain, DKIM key, certificates, and mailbox accounts. Previous BASM releases
+that used Postal do not automatically import Postal's queue, settings or
+database into this Stalwart-only core. Preserve the old deployment and its
+backups until mail migration is verified; consult BASM-Plus planning if
+Postal-specific application mail is needed. Preserving RustDesk's server keys
+avoids changing the identity configured on its clients. Imported application
+logins may differ from the fresh-install handover; update the private vault
+accordingly.
+
+Before removing Postal from an existing BASM install, take and verify a full
+Restic snapshot while the old stack is quiesced, then create a separate
+root-only archive containing Postal's configuration, database dump and
+deployment metadata. Keep it outside the Restic repository; the old Postal
+directories under `<BASM_ROOT>/data/` and `<BASM_ROOT>/config/` are not
+automatically deleted by the Core upgrade. Verify Stalwart mail delivery
+before considering removal of either the archive or those legacy directories.
+The conventional archive location is `<BACKUP_LOCATION>/postal-archive/`;
+the live `.20` migration archive is stored at
+`/var/backups/basm/postal-archive/`.
+After verifying mail sent by Stalwart, remove DNS records used only by Postal:
+its DKIM selector, return-path and route-domain MX/SPF records, tracking
+hostname, and any SPF include that referred to Postal. Keep the active
+Stalwart MX/DKIM/SPF records, DMARC policy, application hostnames, and live
+certificate-challenge records.
 
 Leave background mail delivery and ERP scheduling paused until cutover to avoid
 duplicate processing. BASM's health check should fail while required services
@@ -35,9 +55,12 @@ data, maintenance mode, DNS and forwarding, not merely power on the old host.
 ## Manually migrated services
 
 Additional Compose stacks under `<BASM_ROOT>/modules/` are manual integrations,
-not new supported installer modules. See [backup coverage](backup.md#manually-migrated-services).
-Keep external migration bundles and local-only images in a protected recovery
-kit; neither is recovered merely by restoring a Compose file.
+not new supported installer modules. BASM updates and maintenance operate only
+on installer modules listed in `BASM_MODULES`; other stacks are left running
+and are not health-checked or stopped for consistent backups. See
+[backup coverage](backup.md#manually-migrated-services). Keep external
+migration bundles and local-only images in a protected recovery kit; neither
+is recovered merely by restoring a Compose file.
 
 For DNS/VPN migration, preserve keys and peer addresses when appropriate, but
 verify endpoint names, UDP forwarding and real external handshakes. Use exact
@@ -63,12 +86,10 @@ privately, not from shared logs or screenshots.
    and confirm a background job completes with site scheduling enabled.
 2. **Nextcloud:** sign in, upload/download a test file, compare contents and delete
    it. Check maintenance mode and database-upgrade status.
-3. **Postal:** verify the imported organization/server/domain and refreshed SPF,
-   DKIM, MX and return-path checks. Compare active hostname settings with DNS;
-   preserve existing signing keys. After stopping old delivery processing, send
-   one authorized test to a controlled external mailbox. Confirm queue drainage,
-   recipient receipt and received SPF/DKIM/DMARC results. Also verify
-   unauthenticated external relay is rejected. Postal is not mailbox hosting.
+3. **Mail:** verify Stalwart's mail domain, mailboxes, certificates and DKIM
+   record. Send and receive using Thunderbird over IMAP/SMTP, send a test
+   ERPNext email, and confirm SPF/DKIM/DMARC results at a controlled external
+   mailbox. Verify unauthenticated external relay is rejected.
 4. **Private management:** use SSH tunnels for LAMP and Uptime Kuma. Do not
    publicly forward their administration ports. For example, replacing
    `SERVER_LAN_IP` with the server address:

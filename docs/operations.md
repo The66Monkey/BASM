@@ -7,9 +7,9 @@ your configured root, or `/opt/basm-local` for local mode.
 
 Open `https://YOUR-DOMAIN/` (include your configured HTTPS port if nonstandard).
 The public start page shows the business name and links to business services;
-it grants no application access. Postal's link is for mail administration, not
-an employee inbox. LAMP, Uptime Kuma, vaults and server access remain private and
-are not linked. Sign in separately to each application.
+it grants no application access. The mail link is for Stalwart administration,
+not an employee inbox. LAMP, Uptime Kuma, vaults and server access remain
+private and are not linked. Sign in separately to each application.
 
 Local tests use `http://home.localhost:18080/`, or `home.basm.test` with private
 LAN DNS and the selected HTTP port. The existing localhost/IP Nextcloud routes
@@ -68,9 +68,12 @@ hostname when connecting to the VM's LAN IP. Keep BASM's ACME store separate
 from the edge's store; do not share writable ACME files between proxies.
 To preserve real client addresses, put only the edge's exact LAN IPv4 in the
 private `config/traefik-edge-ip` file. Regeneration validates it and trusts
-forwarded headers from that single address (`/32`), not the LAN or internet.
-Without that file no forwarded-header sources are trusted. Recreate/restart
-Traefik after changing its static configuration.
+forwarded headers and PROXY protocol from that single address (`/32`), not the
+LAN or internet. For Stalwart TLS passthrough, the DEN TCP service must send
+PROXY protocol v2; BASM's isolated mail-proxy network then carries the original
+client address to Stalwart. Without that file no forwarded-header or PROXY
+protocol sources are trusted. Recreate/restart Traefik after changing its
+static configuration.
 No root/business/mail DNS changes are required if the public IPv4 is unchanged.
 Do not retire an old DNS service until legacy VPN DNS forwarders have been
 pointed to the independent resolver.
@@ -147,7 +150,7 @@ the six-month schedule.
 - Nextcloud cannot skip major versions or downgrade. ERPNext major upgrades
   and database-series changes need a tested release migration.
 - Nextcloud 33, ERPNext 16, Traefik 3 and configured MariaDB/Redis series receive
-  compatible channel updates. Exact pins such as Postal need reviewed releases.
+  compatible channel updates. Exact pins need reviewed releases.
   Fluxer uses `rexctl upgrade` with its archive included in BASM backups.
 - Debian packages and BASM source are not automatically upgraded. Six-month
   application updates do not replace urgent security fixes.

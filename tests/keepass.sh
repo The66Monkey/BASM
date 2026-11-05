@@ -14,10 +14,9 @@ mkdir -p "$OUTPUT_DIR"
 port_in_use() { return 1; }
 dpkg-query() { printf 'install ok installed'; }
 apt-get() { printf 'Unexpected package installation in KeePass tests.\n' >&2; return 1; }
-run_wizard < <(printf 'local\n\n\n\n\n\n\n7\n\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n7\n\nA\n')
 [[ "$BASM_MODULES" == 'basm keepass' ]]
-mkdir -p "$BASM_ROOT/config/postal" "$BASM_ROOT/config/prepared-modules/wireguard"
-printf 'postal-test-key' > "$BASM_ROOT/config/postal/signing.key"
+mkdir -p "$BASM_ROOT/config/prepared-modules/wireguard"
 printf 'server-test-key' > "$BASM_ROOT/config/prepared-modules/wireguard/config.conf"
 printf 'peer-test-key' > "$BASM_ROOT/config/prepared-modules/wireguard/peer1.conf"
 DESEC_TOKEN="$(generate_password)"
@@ -35,7 +34,7 @@ master="$(< "$MASTER_FILE")"
 [[ "$(stat -c '%a' "$USER_HANDOVER")" == 600 ]]
 [[ "$(grep -c '^Master password:' "$USER_HANDOVER")" == 1 ]]
 grep -Fq "Master password: $master" "$USER_HANDOVER"
-for variable in ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD POSTAL_ADMIN_PASSWORD DB_ROOT_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_RAILS_SECRET RESTIC_PASSWORD DESEC_TOKEN; do
+for variable in ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD DB_ROOT_PASSWORD NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD DESEC_TOKEN; do
   if grep -Fq "${!variable}" "$USER_HANDOVER" "$IT_HANDOVER" "$OUTPUT_DIR/local-installation-summary.txt"; then
     printf 'Service credential leaked into handover: %s\n' "$variable" >&2
     exit 1
@@ -57,12 +56,9 @@ group = vault.find_groups(name="BASM", first=True)
 expected = {
     "ERPNext administrator": "ERP_ADMIN_PASSWORD",
     "Nextcloud administrator": "NEXTCLOUD_ADMIN_PASSWORD",
-    "Postal administrator": "POSTAL_ADMIN_PASSWORD",
     "ERPNext database root": "DB_ROOT_PASSWORD",
     "Nextcloud database root": "DB_ROOT_PASSWORD",
     "Nextcloud application database": "NEXTCLOUD_DB_PASSWORD",
-    "Postal database root": "POSTAL_DB_PASSWORD",
-    "Postal signing secret": "POSTAL_RAILS_SECRET",
     "Restic backup encryption": "RESTIC_PASSWORD",
     "deSEC API token": "DESEC_TOKEN",
 }
@@ -70,7 +66,7 @@ for title, variable in expected.items():
     entry = vault.find_entries(title=title, group=group, first=True)
     assert entry.password == os.environ[variable], title
     assert os.environ[variable].encode() not in database.read_bytes(), title
-for title, content in (("Postal signing key", b"postal-test-key"), ("WireGuard config.conf", b"server-test-key"), ("WireGuard peer1.conf", b"peer-test-key")):
+for title, content in (("WireGuard config.conf", b"server-test-key"), ("WireGuard peer1.conf", b"peer-test-key")):
     entry = vault.find_entries(title=title, group=group, first=True)
     assert entry.attachments[0].data == content, title
 vault.find_entries(title="Nextcloud administrator", group=group, first=True).password = "OwnerChangedPassword"

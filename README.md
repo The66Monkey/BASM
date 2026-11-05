@@ -10,7 +10,7 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 ## What gets installed?
 
 - ERPNext for core business operations
-- Postal for self-hosted mail handling
+- Stalwart for self-hosted inbound/outbound email, mailboxes, IMAP and SMTP
 - Nextcloud for file sync and collaboration
 - Fluxer for self-hosted community chat and voice/video
 - Restic for encrypted backups
@@ -86,8 +86,9 @@ Run `sudo basm update` for a manual update. See
 ## Day-to-day operation
 
 Open your main BASM domain over HTTPS for a start page linking ERPNext, Nextcloud,
-Postal administration and enabled Fluxer. Each service still requires its own
-login. No credentials or private management links are published.
+Stalwart mail and enabled Fluxer. Each service still
+requires its own login. No credentials or private management links are published.
+See the [self-hosted mail guide](docs/mail.md) for mailbox setup and Thunderbird.
 
 Use `sudo basm status`, `sudo basm check`, and `sudo basm logs`.
 For a local install, add `--root /opt/basm-local` before the command.
@@ -122,15 +123,17 @@ Start with installation, then use the relevant operations or reference guide:
    manually migrated services.
 8. [Security model](docs/security-model.md) — understand secrets, handover
    documents, network exposure and update safeguards.
-9. [KeePass vault sharing](docs/keepass-sharing.md) — keep administrator,
-   team and personal vaults separate.
-10. [Production VMs and backup storage](docs/virtual-machines.md) — configure
+9. [Self-hosted mail](docs/mail.md) — configure Stalwart mailboxes, DNS,
+    Thunderbird and delivery tests.
+10. [KeePass vault sharing](docs/keepass-sharing.md) — keep administrator,
+    team and personal vaults separate.
+11. [Production VMs and backup storage](docs/virtual-machines.md) — configure
     persistent host-disk backup storage for a production VM.
-11. [Service layout](docs/service-layout.md) — find deployment files, services,
+12. [Service layout](docs/service-layout.md) — find deployment files, services,
     hostnames and ports.
-12. [Architecture notes](docs/architecture.md) — understand BASM's components,
+13. [Architecture notes](docs/architecture.md) — understand BASM's components,
     configuration and operating model.
-13. [Testing](docs/testing.md) — review remaining live acceptance requirements.
+14. [Testing](docs/testing.md) — review remaining live acceptance requirements.
 
 ## License
 

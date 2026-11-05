@@ -23,19 +23,20 @@ creation is safe to rerun, and the scheduler is explicitly enabled.
 Preconfigured with MariaDB, Redis, and a generated administrator account, so
 the browser setup wizard is not needed.
 
-### Postal
+### Stalwart
 
-Follows the current v3 deployment model: MariaDB, a one-shot schema
-initializer, web, SMTP, and worker services. It does not use RabbitMQ.
+Provides inbound/outbound SMTP, user mailboxes, IMAP, authenticated SMTP
+submission, and mail administration. It stores messages, accounts, and settings
+in its persistent local data store; it does not require another MariaDB.
 
-- The web port is private to the Compose network and proxied by Traefik.
-- The web process binds to the container network interface so the proxy can
-  reach it.
-- Local SMTP is published only on `127.0.0.1:2525`.
-- Production SMTP uses TCP 25; real delivery depends on public DNS and
-  provider network policy.
-- The mounted config and signing key are readable by Postal's non-root
-  container account and are not world-readable.
+- IMAP over TLS and authenticated SMTP submission are published on TCP 993 and
+  465. The first-run setup listener is loopback-only.
+- TCP 443 is routed by Traefik as TLS passthrough for `mx.<domain>`, allowing
+  Stalwart to serve its WebUI and manage its own mail-protocol certificates.
+- SMTP port 25 is published for inbound internet mail in production and bound
+  to loopback in local mode. ERPNext can send through authenticated Stalwart SMTP.
+- Stalwart's mailbox data and configuration are included in coordinated
+  backups; no SQL dump is needed for its embedded database.
 
 ## Configuration and secrets
 
@@ -46,7 +47,9 @@ initializer, web, SMTP, and worker services. It does not use RabbitMQ.
 - Selected ports are saved and propagated to Compose mappings, module configs,
   and summary URLs.
 - Generated secrets are reused to recreate containers and deployment artifacts
-  when BASM is upgraded or modules are reconfigured.
+  when BASM is upgraded or modules are reconfigured. Legacy Postal settings may
+  be read from an older environment file for upgrade compatibility but are not
+  used or re-saved.
 - The summary lists account names but never prints passwords.
 - The wizard validates hostnames and time zones, and warns when production DNS,
   host sizing, or SMTP port prerequisites are not met.

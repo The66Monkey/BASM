@@ -76,12 +76,9 @@ def sync(root, values):
         port = values["HTTP_PORT"] if scheme == "http" else values["HTTPS_PORT"]
         add("ERPNext administrator", "Administrator", values["ERP_ADMIN_PASSWORD"], f'{scheme}://{values["ERP_URL"]}:{port}')
         add("Nextcloud administrator", values["NEXTCLOUD_ADMIN_USER"], values["NEXTCLOUD_ADMIN_PASSWORD"], f'{scheme}://{values["CLOUD_URL"]}:{port}')
-        add("Postal administrator", values["ADMIN_EMAIL"], values["POSTAL_ADMIN_PASSWORD"], f'{scheme}://{values["MAIL_URL"]}:{port}')
         add("ERPNext database root", "root", values["DB_ROOT_PASSWORD"], notes="Database host: erp-db")
         add("Nextcloud database root", "root", values["DB_ROOT_PASSWORD"], notes="Database host: nextcloud-db")
         add("Nextcloud application database", "nextcloud", values["NEXTCLOUD_DB_PASSWORD"], notes="Database: nextcloud; host: nextcloud-db")
-        add("Postal database root", "root", values["POSTAL_DB_PASSWORD"], notes="Database: postal; host: postal-db")
-        add("Postal signing secret", password=values["POSTAL_RAILS_SECRET"])
         add("Restic backup encryption", password=values["RESTIC_PASSWORD"], notes=f'Repository: {values["BACKUP_LOCATION"]}/restic')
         if values["DESEC_TOKEN"]:
             add("deSEC API token", password=values["DESEC_TOKEN"], url="https://desec.io/")
@@ -89,7 +86,7 @@ def sync(root, values):
             add("Uptime Kuma administrator", url=f'http://{values["MANAGEMENT_BIND_ADDRESS"]}:{values["UPTIME_KUMA_PORT"]}', notes="Private listener; use an SSH tunnel for loopback access from another computer. Record the account created during first-time setup here. BASM cannot discover its password.")
         for title in ("Server administrator", "Router administrator", "Domain provider", "Internet provider", "Off-site backups"):
             add(title, notes="Ask IT to record the existing account here; BASM does not know these credentials.")
-        attachments = [("Postal signing key", config / "postal" / "signing.key")]
+        attachments = []
         for directory in (root / "modules" / "wireguard", config / "prepared-modules" / "wireguard"):
             attachments.extend((f"WireGuard {name}", directory / name) for name in ("config.conf", "peer1.conf"))
         for title, path in attachments:
@@ -113,9 +110,8 @@ if __name__ == "__main__":
     names = (
         "DEPLOYMENT_MODE", "HTTP_PORT", "HTTPS_PORT", "ERP_URL", "MAIL_URL", "CLOUD_URL",
         "ERP_ADMIN_PASSWORD", "NEXTCLOUD_ADMIN_USER", "NEXTCLOUD_ADMIN_PASSWORD", "ADMIN_EMAIL",
-        "POSTAL_ADMIN_PASSWORD", "DB_ROOT_PASSWORD", "NEXTCLOUD_DB_PASSWORD", "POSTAL_DB_PASSWORD",
-        "POSTAL_RAILS_SECRET", "RESTIC_PASSWORD", "BACKUP_LOCATION", "DESEC_TOKEN", "BASM_MODULES",
-        "MANAGEMENT_BIND_ADDRESS", "UPTIME_KUMA_PORT",
+        "DB_ROOT_PASSWORD", "NEXTCLOUD_DB_PASSWORD", "RESTIC_PASSWORD", "BACKUP_LOCATION",
+        "DESEC_TOKEN", "BASM_MODULES", "MANAGEMENT_BIND_ADDRESS", "UPTIME_KUMA_PORT",
     )
     try:
         fields = sys.stdin.buffer.read().decode().split("\0")

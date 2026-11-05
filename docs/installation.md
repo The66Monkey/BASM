@@ -80,7 +80,7 @@ disk also does not provide disk-failure protection.
 ## Installer behavior
 
 The main production domain serves a BASM start page with your business name and
-links to ERPNext, Nextcloud, Postal administration and selected Fluxer. It is
+links to ERPNext, Nextcloud, Stalwart mail and selected Fluxer. It is
 public over HTTPS; each application retains its own authentication. The page
 does not display credentials, SSH instructions, vaults or private management
 listeners. Point the main domain to BASM as well as the application subdomains.
@@ -93,7 +93,8 @@ The installer does the following:
 - Installs common requirements and base tooling
 - Creates the BASM directory structure
 - Generates deployment config and strong service credentials under the BASM data root
-- Initializes the ERPNext site, Nextcloud account, and Postal database/admin user
+- Initializes the ERPNext site and Nextcloud account; Stalwart's first-run mail
+  setup is completed by the administrator
 - Schedules encrypted daily database and file backups with Restic
 - Deploys the selected optional modules
 - Creates the post-installation summary
@@ -122,7 +123,10 @@ chosen bind address, domain, or HTTP/TLS mode.
 | --- | --- | --- |
 | Traefik HTTP (TCP) | 80 | 18080 |
 | Traefik HTTPS (TCP) | 443 | 18443 |
-| Postal SMTP (TCP) | 25 | 2525 (loopback only) |
+| Stalwart SMTP (TCP) | 25 | 2525 (loopback only) |
+| Mailbox SMTP submission (TCP) | 465 | 12465 (loopback only) |
+| Mailbox IMAP over TLS (TCP) | 993 | 12993 (loopback only) |
+| Mailbox setup (TCP) | 18082 (loopback only) | 18082 (loopback only) |
 | LAMP HTTP (TCP) | 8080 | 18081 |
 | Uptime Kuma HTTP (TCP) | 3001 | 18301 |
 | WireGuard ListenPort (UDP) | 51820 | 18520 |
@@ -132,7 +136,8 @@ chosen bind address, domain, or HTTP/TLS mode.
 | Fluxer voice (TCP) | 7881 | 17881 |
 | Fluxer voice (UDP) | 7882 | 17882 |
 
-`custom` prompts for HTTP, HTTPS, SMTP, all full-profile modules' ports, and
+`custom` prompts for HTTP, HTTPS, Stalwart SMTP, mailbox SMTP submission and IMAP,
+the loopback-only mailbox setup listener, all full-profile modules' ports, and
 selected Fluxer voice ports, so services have a reusable port plan. Values must
 be between 1 and 65535. Duplicate TCP mappings, including collisions with the
 recorded host SSH port and future full-profile services, are rejected by the
@@ -147,7 +152,7 @@ Compose mappings, module configuration, and summary URLs. Adding a module later
 reuses its saved port and checks it against the existing plan. If it conflicts,
 rerun the full wizard with that module selected and choose custom ports.
 
-Only Traefik publishes the shared web entry points. Postal, ERPNext, and
+Only Traefik publishes the shared web entry points. Stalwart, ERPNext, and
 Nextcloud are reached by hostname over the private Compose network, so their
 internal listening ports do not compete for host port 80. Do not start separate
 upstream web proxies publishing the same host port alongside BASM's Traefik.
@@ -190,7 +195,7 @@ It does not change SSH settings, open firewall rules, or configure your router.
 - ERP route: http://erp.localhost:18080.
 - Mail route: http://mail.localhost:18080.
 - Local configuration and generated passwords are stored under `/opt/basm-local/config/` with mode `0600`.
-- Postal SMTP listens on `127.0.0.1:2525`; local mode cannot deliver internet mail.
+- Stalwart SMTP listens on `127.0.0.1:2525`; local mode cannot deliver internet mail.
 - Restic encrypts daily backups in `/opt/basm-local/backups/restic`.
 - Data and backups default to `/opt/basm-local` and `/opt/basm-local/backups`.
 - Container names use the `basm-local-` prefix to avoid production collisions.
@@ -222,11 +227,10 @@ private address is not a firewall or a guarantee against upstream NAT forwarding
 ### Service readiness
 
 ERPNext and Nextcloud are initialized with generated administrator credentials.
-The Postal web UI and database are initialized, but local mode cannot validate real
-mail delivery. Production mail requires working public DNS, correct MX/SPF/DKIM/DMARC
-records, a stable IP address, and a provider that permits inbound and outbound TCP
-port 25. Postal's upstream guidance recommends a dedicated host with at least 4 GB
-RAM and 2 CPU cores.
+Stalwart provides local test mailboxes, but local mode cannot validate real mail
+delivery. Production mail requires working public DNS, correct MX/SPF/DKIM/DMARC
+records, a stable IP address, and a provider that permits inbound and outbound
+TCP port 25.
 
 Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps.
@@ -359,8 +363,8 @@ When selected, the **For the User** document contains the database location and
 one master password instead of individual service credentials. The summary and
 **For IT** guide refer to the database without including its master password.
 The database contains BASM-generated administrator and database passwords, the
-Restic password, Postal signing material, any deSEC API token, and generated
-WireGuard files, including prepared configurations.
+Restic password, any deSEC API token, and generated WireGuard files, including
+prepared configurations.
 
 BASM cannot discover passwords for accounts created manually, such as Uptime
 Kuma, the server, or the router. IT must fill in the provided entries for these
@@ -394,7 +398,7 @@ bash tests/keepass.sh
 
 ## Upgrading from basic to full
 
-A basic install runs BASM Core only (ERPNext, Nextcloud, Postal, Traefik, and
+A basic install runs BASM Core only (ERPNext, Nextcloud, Stalwart, Traefik, and
 Restic backups). The full profile includes every supported module: Core, LAMP,
 WireGuard, Uptime Kuma, Fluxer, KeePassXC, and RustDesk Server OSS. Vaultwarden
 is deprecated and unavailable for new installs; backup and Traefik are already
@@ -486,8 +490,7 @@ missing. Use `update.sh` when you intentionally want newer images.
 
 The BASM stack intentionally uses upstream projects and their official install guidance:
 
-- Postal: https://docs.postalserver.io/getting-started/installation
-- Postal repo: https://github.com/postalserver
+- Stalwart documentation: https://stalw.art/docs/
 - ERPNext upstream: https://github.com/frappe/erpnext
 - ERPNext Docker repo: https://github.com/frappe/frappe_docker
 

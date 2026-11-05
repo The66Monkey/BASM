@@ -30,7 +30,8 @@ Passing isolated tests is not a production deployment claim. On a disposable
 Debian host with non-sensitive data, validate:
 
 - Fresh installation and adoption from the previous release, all selected modules.
-- Real ERPNext migrations, Nextcloud upgrades, Postal mail delivery and Fluxer calls.
+- Real ERPNext migrations, Nextcloud upgrades, Stalwart mail delivery and
+  Fluxer calls.
 - Nightly stop/backup/restart timing, external webhook delivery and six-month scheduling.
 - Full replacement-host recovery with saved accounts, files, databases and RustDesk keys.
 - Reboot behavior, missing backup mounts, TLS/DNS and public/private reachability.

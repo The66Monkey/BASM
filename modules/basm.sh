@@ -6,8 +6,8 @@ module_install() {
   log "Installing BASM core components"
 
   ensure_dir "$BASM_ROOT/config"
+  prepare_stalwart_storage || fail "Cannot prepare Stalwart configuration storage."
   ensure_dir "$BASM_ROOT/data/erpnext"
-  ensure_dir "$BASM_ROOT/data/postal"
   ensure_dir "$BASM_ROOT/data/nextcloud"
   ensure_dir "$BASM_ROOT/data/restic"
   ensure_dir "$BASM_ROOT/data/traefik"
@@ -25,13 +25,8 @@ module_install() {
   if command -v docker >/dev/null 2>&1; then
     log "Starting BASM Docker stack"
     basm_stack up -d --remove-orphans --quiet-pull || fail "Docker stack did not start cleanly. Review the Compose output and logs."
-    basm_stack wait erpnext-create-site postal-initialize || fail "A core service initialization job failed. Review the Compose logs."
+    basm_stack wait erpnext-create-site || fail "The ERPNext site initialization job failed. Review the Compose logs."
     basm_stack up -d --wait --wait-timeout 900 --remove-orphans --quiet-pull || fail "Docker stack did not reach its final running state."
-    if [[ ! -f "$BASM_ROOT/config/postal-admin-created" ]]; then
-      printf '%s\nBASM\nAdmin\n%s\n' "$ADMIN_EMAIL" "$POSTAL_ADMIN_PASSWORD" |
-        basm_compose -f "$BASM_ROOT/docker-compose.yml" --env-file "$BASM_ROOT/config/basm.env" run --rm -T postal-runner postal make-user || fail "Postal admin user creation failed."
-      touch "$BASM_ROOT/config/postal-admin-created"
-    fi
   else
     fail "Docker CLI was not found; the BASM stack cannot be started."
   fi

@@ -27,7 +27,7 @@ Review the stack and logs:
 - docker compose -f /opt/basm/docker-compose.yml config
 - docker compose -f /opt/basm/docker-compose.yml logs
 - docker compose -f /opt/basm/docker-compose.yml ps
-- docker compose -f /opt/basm/docker-compose.yml logs erpnext-create-site postal-initialize
+- docker compose -f /opt/basm/docker-compose.yml logs erpnext-create-site
 
 ## Port already in use
 
@@ -36,7 +36,7 @@ The wizard warns before continuing. If a service still fails, check which progra
 - ss -lntup | grep :80
 - ss -lntup | grep :443
 
-For Postal's SMTP port, run `sudo ss -ltnp 'sport = :25'`. Debian may already
+For Stalwart's SMTP port, run `sudo ss -ltnp 'sport = :25'`. Debian may already
 have Exim installed for local mail delivery. If it is not needed, explicitly
 stop and disable it before retrying; the installer does not stop existing mail
 services automatically.

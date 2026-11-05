@@ -63,21 +63,27 @@ adopt_backup_mount() (
 )
 
 record_stack_images() {
-  local file="$1" destination="$2" configuration service image container digest temporary
+  local file="$1" destination="$2" configuration service image configured_image container digest temporary
   configuration="$(stack_command "$file" config --format json)" || return
   temporary="$(mktemp)" || return
   printf '{"services":{}}\n' > "$temporary"
   while IFS=$'\t' read -r service image; do
+    configured_image="$image"
     container="$(stack_command "$file" ps --all -q "$service")" || { rm -f "$temporary"; return 1; }
     if [[ -n "$container" ]]; then
       image="$(docker inspect --format '{{.Image}}' "$container")" || { rm -f "$temporary"; return 1; }
     fi
     digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" || { rm -f "$temporary"; return 1; }
-    digest="$(jq -er '.[0] | select(test("@sha256:[a-f0-9]{64}$"))' <<< "$digest")" || {
-      rm -f "$temporary"
-      warn "No registry digest available for $service; cannot guarantee recovery versions."
-      return 1
-    }
+    if ! digest="$(jq -er 'if type == "array" then .[0] | select(type == "string" and test("@sha256:[a-f0-9]{64}$")) else empty end' <<< "$digest")"; then
+      if [[ "$configured_image" =~ @sha256:[a-f0-9]{64}$ ]]; then
+        digest="$configured_image"
+        warn "Running image for $service has no registry metadata; retaining its configured digest."
+      else
+        rm -f "$temporary"
+        warn "No registry digest available for $service; cannot guarantee recovery versions."
+        return 1
+      fi
+    fi
     configuration="$(jq --arg service "$service" --arg image "$digest" \
       '.services[$service] = {image:$image}' "$temporary")" || { rm -f "$temporary"; return 1; }
     printf '%s\n' "$configuration" > "$temporary"
@@ -103,7 +109,7 @@ dump_databases() {
   local service destination
   mkdir -p "$BASM_ROOT/data/db-backups" || return
   chmod 700 "$BASM_ROOT/data/db-backups" || return
-  for service in erp-db nextcloud-db postal-db; do
+  for service in erp-db nextcloud-db; do
     destination="$BASM_ROOT/data/db-backups/$service.sql"
     basm_stack exec -T "$service" sh -ec \
       'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec mariadb-dump --skip-ssl --single-transaction --routines --events -uroot --all-databases' \
@@ -152,7 +158,7 @@ backup_deployment() (
     if [[ "$file" == "$BASM_ROOT/docker-compose.yml" ]]; then
       record_stack_images "$file" "$BASM_ROOT/config/images.json" || return
       while IFS= read -r stopped; do
-        case "$stopped" in erp-db|nextcloud-db|postal-db|'') ;; *) writers+=("$stopped") ;; esac
+        case "$stopped" in erp-db|nextcloud-db|'') ;; *) writers+=("$stopped") ;; esac
       done <<< "$running"
       if [[ ${#writers[@]} != 0 ]]; then
         stack_command "$file" stop --timeout 120 "${writers[@]}" || return

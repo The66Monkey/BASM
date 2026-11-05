@@ -40,6 +40,15 @@ ensure_dir() {
   mkdir -p "$1"
 }
 
+prepare_stalwart_storage() {
+  local directory
+  for directory in "$BASM_ROOT/config/stalwart" "$BASM_ROOT/data/stalwart"; do
+    install -d -m 750 "$directory" || return
+    chmod 750 "$directory" || return
+    chown 2000:2000 "$directory" || return
+  done
+}
+
 install_login_banner() {
   local profile_dir="${BASM_PROFILE_DIR:-/etc/profile.d}"
   install -d -m 755 "$profile_dir" || fail "Could not create the BASM login profile directory."
@@ -94,8 +103,12 @@ basm_compose() {
 }
 
 module_compose_files() {
-  local root="${1:-$BASM_ROOT}" file
-  for file in "$root"/modules/*/docker-compose.yml; do
+  local root="${1:-$BASM_ROOT}" module file
+  local -a selected_modules=()
+  read -r -a selected_modules <<< "${BASM_MODULES:-basm}"
+  for module in "${selected_modules[@]}"; do
+    [[ "$module" != basm ]] || continue
+    file="$root/modules/$module/docker-compose.yml"
     [[ -f "$file" ]] && printf '%s\n' "$file"
   done
   return 0
@@ -187,8 +200,7 @@ generate_password() {
 sync_keepass() {
   printf '%s\0' "${DEPLOYMENT_MODE:-production}" "$HTTP_PORT" "$HTTPS_PORT" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" \
     "$ERP_ADMIN_PASSWORD" "$NEXTCLOUD_ADMIN_USER" "$NEXTCLOUD_ADMIN_PASSWORD" "$ADMIN_EMAIL" \
-    "$POSTAL_ADMIN_PASSWORD" "$DB_ROOT_PASSWORD" "$NEXTCLOUD_DB_PASSWORD" "$POSTAL_DB_PASSWORD" \
-    "$POSTAL_RAILS_SECRET" "$RESTIC_PASSWORD" "$BACKUP_LOCATION" "${DESEC_TOKEN:-}" "${BASM_MODULES:-basm}" \
+    "$DB_ROOT_PASSWORD" "$NEXTCLOUD_DB_PASSWORD" "$RESTIC_PASSWORD" "$BACKUP_LOCATION" "${DESEC_TOKEN:-}" "${BASM_MODULES:-basm}" \
     "${MANAGEMENT_BIND_ADDRESS:-$BIND_ADDRESS}" "$UPTIME_KUMA_PORT" | /usr/bin/python3 "$ROOT_DIR/templates/keepass-sync.py" "$BASM_ROOT"
 }
 
@@ -207,15 +219,26 @@ validate_desec_token() {
 ensure_port_defaults() {
   MANAGEMENT_BIND_ADDRESS="${MANAGEMENT_BIND_ADDRESS:-${BIND_ADDRESS:-127.0.0.1}}"
   [[ "$MANAGEMENT_BIND_ADDRESS" != 0.0.0.0 ]] || MANAGEMENT_BIND_ADDRESS=127.0.0.1
+  SMTP_BIND_ADDRESS="${SMTP_BIND_ADDRESS:-${BIND_ADDRESS:-127.0.0.1}}"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    WEB_PROTOCOL="${WEB_PROTOCOL:-http}"
+  else
+    WEB_PROTOCOL="${WEB_PROTOCOL:-https}"
+  fi
+  MAILBOX_HOSTNAME="${MAILBOX_HOSTNAME:-mx.${PRIMARY_DOMAIN:-example.com}}"
+  MAILBOX_BIND_ADDRESS="${MAILBOX_BIND_ADDRESS:-${BIND_ADDRESS:-127.0.0.1}}"
+  MAILBOX_SETUP_BIND_ADDRESS=127.0.0.1
   validate_local_bind_address "$MANAGEMENT_BIND_ADDRESS" || fail "Management listeners require loopback or a private LAN IPv4."
   local default_http=80 default_https=443 default_lamp=8080 default_kuma=3001 default_wireguard=51820
   local default_fluxer_tcp=7881 default_fluxer_udp=7882
   local default_smtp=25
+  local default_mailbox_submission=465 default_mailbox_imaps=993 default_mailbox_setup=18082
   local default_fluxer_proxy=8088 default_fluxer_voice_tcp=17881 default_fluxer_voice_udp=17882
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     default_http=18080 default_https=18443 default_lamp=18081 default_kuma=18301 default_wireguard=18520
     default_fluxer_tcp=17881 default_fluxer_udp=17882
     default_smtp=2525
+    default_mailbox_submission=12465 default_mailbox_imaps=12993
     default_fluxer_proxy=18088 default_fluxer_voice_tcp=17881 default_fluxer_voice_udp=17882
   fi
   HTTP_PORT="${HTTP_PORT:-$default_http}"
@@ -235,10 +258,14 @@ ensure_port_defaults() {
   FLUXER_VOICE_UDP_PORT="${FLUXER_VOICE_UDP_PORT:-$default_fluxer_voice_udp}"
   FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.${PRIMARY_DOMAIN:-example.com}}"
   SMTP_PORT="${SMTP_PORT:-$default_smtp}"
+  MAILBOX_SUBMISSION_PORT="${MAILBOX_SUBMISSION_PORT:-$default_mailbox_submission}"
+  MAILBOX_IMAPS_PORT="${MAILBOX_IMAPS_PORT:-$default_mailbox_imaps}"
+  MAILBOX_SETUP_PORT="${MAILBOX_SETUP_PORT:-$default_mailbox_setup}"
   SSH_PORT="${SSH_PORT:-22}"
   export HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_PROXY_PORT \
-    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_PORT \
-    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
+    FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT FLUXER_DOMAIN SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT WEB_PROTOCOL \
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS \
+    MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
 }
 
 set_port_defaults() {
@@ -254,6 +281,9 @@ set_port_defaults() {
   FLUXER_VOICE_TCP_PORT=17881
   FLUXER_VOICE_UDP_PORT=17882
   SMTP_PORT=25
+  MAILBOX_SUBMISSION_PORT=465
+  MAILBOX_IMAPS_PORT=993
+  MAILBOX_SETUP_PORT=18082
   if [[ "$1" == local ]]; then
     HTTP_PORT=18080
     HTTPS_PORT=18443
@@ -267,13 +297,15 @@ set_port_defaults() {
     FLUXER_VOICE_TCP_PORT=17881
     FLUXER_VOICE_UDP_PORT=17882
     SMTP_PORT=2525
+    MAILBOX_SUBMISSION_PORT=12465
+    MAILBOX_IMAPS_PORT=12993
   fi
 }
 
 validate_port_plan() {
   local -A assigned=(["${SSH_PORT:-22}"]="host SSH") assigned_udp=()
   local variable module_name port
-  local -a tcp_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
+  local -a tcp_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT MAILBOX_SETUP_PORT)
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
       lamp) tcp_ports+=(LAMP_PORT) ;;
@@ -315,7 +347,7 @@ validate_port_plan() {
 configure_ports() {
   local default_profile=standard
   local variable module_name protocol
-  local -a custom_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT)
+  local -a custom_ports=(HTTP_PORT HTTPS_PORT SMTP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT MAILBOX_SETUP_PORT)
   ensure_port_defaults
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then default_profile=local; fi
   for module_name in ${BASM_MODULES:-basm} $BASM_PREPARED_MODULES; do
@@ -363,7 +395,8 @@ configure_ports() {
   done
   export PORT_PROFILE HTTP_PORT HTTPS_PORT SMTP_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT \
     FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT \
-    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
+    RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS \
+    MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
 }
 
 validate_local_bind_address() {
@@ -391,10 +424,11 @@ configure_local_mode() {
   if [[ "$BIND_ADDRESS" != 127.0.0.1 ]]; then PRIMARY_DOMAIN=basm.test; fi
   ERP_URL="erp.$PRIMARY_DOMAIN"
   MAIL_URL="mail.$PRIMARY_DOMAIN"
+  MAILBOX_HOSTNAME="mx.$PRIMARY_DOMAIN"
   CLOUD_URL="cloud.$PRIMARY_DOMAIN"
   FLUXER_DOMAIN="chat.$PRIMARY_DOMAIN"
   BACKUP_LOCATION="$BASM_ROOT/backups"
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL FLUXER_DOMAIN BACKUP_LOCATION
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL MAILBOX_HOSTNAME CLOUD_URL FLUXER_DOMAIN BACKUP_LOCATION
 }
 
 render_homepage() {
@@ -404,7 +438,7 @@ render_homepage() {
   install -d -m 755 "$destination/home" || return
   install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/home/mascot.png" || return
   /usr/bin/python3 "$ROOT_DIR/templates/render-homepage.py" "$ROOT_DIR/templates/home.html" \
-    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAIL_URL" "$fluxer" \
+    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" \
     > "$destination/home/index.html" || return
   chmod 644 "$destination/home/index.html"
 }
@@ -413,9 +447,15 @@ render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
   local fluxer_entrypoint=websecure fluxer_domain=""
   local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
-  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS}'
-  export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL
+  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${WEB_PROTOCOL} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS} ${MAILBOX_BIND_ADDRESS} ${MAILBOX_SETUP_BIND_ADDRESS} ${MAILBOX_SETUP_PORT} ${MAILBOX_SUBMISSION_PORT} ${MAILBOX_IMAPS_PORT} ${MAILBOX_HOSTNAME}'
+  export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    WEB_PROTOCOL="${WEB_PROTOCOL:-http}"
+  else
+    WEB_PROTOCOL="${WEB_PROTOCOL:-https}"
+  fi
+  export WEB_PROTOCOL
   export NEXTCLOUD_TRUSTED_DOMAINS="${CLOUD_URL:-}"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     proxy_template="$ROOT_DIR/templates/traefik-local.yml"
@@ -431,7 +471,7 @@ render_stack() {
   fi
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$destination/docker-compose.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
-  envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT}' \
+  envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT} ${MAILBOX_HOSTNAME}' \
     < "$proxy_template" |
     /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" \
       > "$destination/config/traefik.yml" || return
@@ -468,28 +508,6 @@ EOF
     fi
   fi
   render_homepage
-}
-
-render_postal_config() {
-  local postal_config_dir="${BASM_RENDER_DIR:-$BASM_ROOT}/config/postal"
-  ensure_dir "$postal_config_dir"
-  chmod 750 "$postal_config_dir" || return
-  envsubst '${MAIL_URL} ${POSTAL_WEB_PROTOCOL} ${PRIMARY_DOMAIN} ${ADMIN_EMAIL} ${COMPANY_NAME} ${POSTAL_DB_PASSWORD} ${POSTAL_RAILS_SECRET}' \
-    < "$ROOT_DIR/templates/postal.yml" > "$postal_config_dir/postal.yml" || return
-  chmod 640 "$postal_config_dir/postal.yml" || return
-  if [[ ! -f "$postal_config_dir/signing.key" ]]; then
-    if [[ -n "${BASM_RENDER_DIR:-}" ]]; then
-      [[ -f "$BASM_ROOT/config/postal/signing.key" ]] || fail "Saved Postal signing key is missing."
-      cp "$BASM_ROOT/config/postal/signing.key" "$postal_config_dir/signing.key" || return
-    else
-      openssl genrsa -out "$postal_config_dir/signing.key" 2048 || return
-    fi
-  fi
-  chmod 640 "$postal_config_dir/signing.key"
-  if [[ "$EUID" -eq 0 ]]; then
-    chown root:999 "$postal_config_dir" || return
-    chown 999:999 "$postal_config_dir/postal.yml" "$postal_config_dir/signing.key"
-  fi
 }
 
 prompt_value() {
@@ -542,7 +560,8 @@ review_wizard() {
   wizard_section "Review BASM setup"
   printf 'Company: %s\nMode: %s\nData directory: %s\n' "$COMPANY_NAME" "$DEPLOYMENT_MODE" "$BASM_ROOT"
   printf 'Administrator email: %s\nTimezone: %s\nNextcloud administrator: %s\n' "$ADMIN_EMAIL" "$TIMEZONE" "$NEXTCLOUD_ADMIN_USER"
-  printf '\nDomain: %s\nERP: %s\nMail: %s\nCloud: %s\n' "$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL"
+  printf '\nDomain: %s\nERP: %s\nMail alias: %s\nMail server/admin: %s\nCloud: %s\n' \
+    "$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$MAILBOX_HOSTNAME" "$CLOUD_URL"
   printf 'Web bind address: %s\nManagement bind address: %s\n' "$BIND_ADDRESS" "$MANAGEMENT_BIND_ADDRESS"
   printf 'Public IP type: %s\nBackup destination: %s\nModules: %s\n\n' "$IP_MODE" "$BACKUP_LOCATION" "$BASM_MODULES"
   warn_backup_filesystem "$BACKUP_LOCATION"
@@ -649,7 +668,7 @@ select_deployment() {
   fi
   if [[ "$LOCAL_MODE" == false ]]; then
     if [[ "${PRIMARY_DOMAIN:-}" != "$domain" ]]; then
-      unset ERP_URL MAIL_URL CLOUD_URL FLUXER_DOMAIN
+      unset ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME FLUXER_DOMAIN
     fi
     PRIMARY_DOMAIN="$domain"
   fi
@@ -734,6 +753,11 @@ select_modules() {
 }
 
 write_env_file() {
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    WEB_PROTOCOL="${WEB_PROTOCOL:-http}"
+  else
+    WEB_PROTOCOL="${WEB_PROTOCOL:-https}"
+  fi
   mkdir -p "$(dirname "$BASM_ENV_FILE")"
   cat > "$BASM_ENV_FILE" <<EOF
 DEPLOYMENT_MODE="$DEPLOYMENT_MODE"
@@ -760,6 +784,7 @@ FLUXER_VOICE_UDP_PORT=$FLUXER_VOICE_UDP_PORT
 ERP_URL="$ERP_URL"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
+MAILBOX_HOSTNAME="$MAILBOX_HOSTNAME"
 IP_MODE="${IP_MODE:-static}"
 DESEC_TOKEN="${DESEC_TOKEN:-}"
 BACKUP_LOCATION="$BACKUP_LOCATION"
@@ -769,13 +794,15 @@ DB_ROOT_PASSWORD="$DB_ROOT_PASSWORD"
 ERP_ADMIN_PASSWORD="$ERP_ADMIN_PASSWORD"
 NEXTCLOUD_ADMIN_USER="$NEXTCLOUD_ADMIN_USER"
 NEXTCLOUD_ADMIN_PASSWORD="$NEXTCLOUD_ADMIN_PASSWORD"
-POSTAL_DB_PASSWORD="$POSTAL_DB_PASSWORD"
-POSTAL_ADMIN_PASSWORD="$POSTAL_ADMIN_PASSWORD"
-POSTAL_RAILS_SECRET="$POSTAL_RAILS_SECRET"
-POSTAL_WEB_PROTOCOL="$POSTAL_WEB_PROTOCOL"
 NEXTCLOUD_DB_PASSWORD="$NEXTCLOUD_DB_PASSWORD"
 SMTP_BIND_ADDRESS="$SMTP_BIND_ADDRESS"
 SMTP_PORT=$SMTP_PORT
+WEB_PROTOCOL="$WEB_PROTOCOL"
+MAILBOX_BIND_ADDRESS="$MAILBOX_BIND_ADDRESS"
+MAILBOX_SETUP_BIND_ADDRESS="$MAILBOX_SETUP_BIND_ADDRESS"
+MAILBOX_SETUP_PORT=$MAILBOX_SETUP_PORT
+MAILBOX_SUBMISSION_PORT=$MAILBOX_SUBMISSION_PORT
+MAILBOX_IMAPS_PORT=$MAILBOX_IMAPS_PORT
 RESTIC_PASSWORD="$RESTIC_PASSWORD"
 FLUXER_DOMAIN="$FLUXER_DOMAIN"
 EOF
@@ -791,10 +818,11 @@ run_wizard() {
     MANAGEMENT_BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE COMPANY_NAME PRIMARY_DOMAIN
     ADMIN_EMAIL TIMEZONE NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL MAIL_URL CLOUD_URL
     IP_MODE DESEC_TOKEN BASM_MODULES HTTP_PORT HTTPS_PORT SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT
+    MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT
+    MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
     LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT
-    FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT
-    DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD POSTAL_DB_PASSWORD
-    POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD POSTAL_WEB_PROTOCOL
+    FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT WEB_PROTOCOL
+    DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD
   )
   local -A initial=()
   for variable in "${settings[@]}"; do
@@ -816,15 +844,12 @@ run_wizard() {
   DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-$(generate_password)}"
   ERP_ADMIN_PASSWORD="${ERP_ADMIN_PASSWORD:-$(generate_password)}"
   NEXTCLOUD_ADMIN_PASSWORD="${NEXTCLOUD_ADMIN_PASSWORD:-$(generate_password)}"
-  POSTAL_DB_PASSWORD="${POSTAL_DB_PASSWORD:-$(generate_password)}"
-  POSTAL_ADMIN_PASSWORD="${POSTAL_ADMIN_PASSWORD:-$(generate_password)}"
-  POSTAL_RAILS_SECRET="${POSTAL_RAILS_SECRET:-$(generate_secret)}"
   NEXTCLOUD_DB_PASSWORD="${NEXTCLOUD_DB_PASSWORD:-$(generate_password)}"
   RESTIC_PASSWORD="${RESTIC_PASSWORD:-$(generate_password)}"
 
   write_env_file
   read_deployment_settings
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET POSTAL_WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT RESTIC_PASSWORD
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT RESTIC_PASSWORD
 }
 
 collect_wizard_settings() {
@@ -845,6 +870,9 @@ collect_wizard_settings() {
     SMTP_BIND_ADDRESS=0.0.0.0
     SMTP_PORT=25
   fi
+  MAILBOX_HOSTNAME="mx.$PRIMARY_DOMAIN"
+  MAILBOX_BIND_ADDRESS="$BIND_ADDRESS"
+  MAILBOX_SETUP_BIND_ADDRESS=127.0.0.1
   FLUXER_DOMAIN="chat.$PRIMARY_DOMAIN"
 
   wizard_section "2/5 - Organization and backups"
@@ -857,7 +885,7 @@ collect_wizard_settings() {
   local attempt
   ADMIN_EMAIL=""
   for attempt in 1 2 3; do
-    ADMIN_EMAIL="$(prompt_value "Administrator Email (Let's Encrypt and Postal admin)" "$default_email" "$email_validator")"
+    ADMIN_EMAIL="$(prompt_value "Administrator Email (certificate account)" "$default_email" "$email_validator")"
     [[ -n "$ADMIN_EMAIL" ]] && break
     warn "A real administrator email address is required for production certificates."
   done
@@ -871,7 +899,7 @@ collect_wizard_settings() {
   wizard_section "3/5 - Service addresses and DNS"
   if [[ "$DEPLOYMENT_MODE" != local ]]; then
     ERP_URL="$(prompt_value "ERP URL" "${ERP_URL:-erp.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
-    MAIL_URL="$(prompt_value "Mail URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
+    MAIL_URL="$(prompt_value "Mail alias URL" "${MAIL_URL:-mail.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     CLOUD_URL="$(prompt_value "Cloud URL" "${CLOUD_URL:-cloud.$PRIMARY_DOMAIN}" 'validate_domain "$1"')"
     IP_MODE="$(prompt_ip_mode "${IP_MODE:-static}")"
     if [[ "$IP_MODE" == non-static ]]; then
@@ -903,11 +931,11 @@ collect_wizard_settings() {
   wizard_section "5/5 - Ports"
   configure_ports
   if port_in_use "$SMTP_PORT"; then
-    warn "Postal SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
+    warn "Mail server SMTP port $SMTP_PORT/tcp is already in use. Choose an available port or stop its current owner."
   fi
 
-  POSTAL_WEB_PROTOCOL=http
-  if [[ "$DEPLOYMENT_MODE" != local ]]; then POSTAL_WEB_PROTOCOL=https; fi
+  WEB_PROTOCOL=http
+  if [[ "$DEPLOYMENT_MODE" != local ]]; then WEB_PROTOCOL=https; fi
 }
 
 ensure_docker() {
@@ -928,7 +956,7 @@ configure_system() {
 
   if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
     local host memory_kib
-    local -a service_hosts=("$ERP_URL" "$MAIL_URL" "$CLOUD_URL")
+    local -a service_hosts=("$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME")
     module_selected fluxer && service_hosts+=("$FLUXER_DOMAIN")
     for host in "${service_hosts[@]}"; do
       if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
@@ -936,8 +964,8 @@ configure_system() {
       fi
     done
     memory_kib="$(awk '/MemTotal:/ {print $2}' /proc/meminfo)"
-    if (( memory_kib < 4194304 )) || (( $(nproc) < 2 )); then
-      warn "Postal recommends at least 4 GiB RAM and 2 CPU cores; this host is below that baseline."
+    if (( memory_kib < 2097152 )) || (( $(nproc) < 2 )); then
+      warn "Mail service performance may be limited on a host with less than 2 GiB RAM or 2 CPU cores."
     fi
     warn "Production mail requires public MX/SPF/DKIM/DMARC records and inbound/outbound TCP port 25."
   fi
@@ -949,6 +977,7 @@ configure_system() {
 
   ensure_dir "$BASM_ROOT"
   ensure_dir "$BASM_ROOT/config"
+  prepare_stalwart_storage || fail "Cannot prepare Stalwart configuration storage."
   ensure_dir "$BASM_ROOT/data"
   ensure_dir "$BASM_ROOT/data/db-backups"
   chmod 700 "$BASM_ROOT/data/db-backups"
@@ -966,7 +995,6 @@ configure_system() {
     chmod 755 "$BASM_ROOT/config/erpnext-create-site.sh"
   fi
   render_stack || fail "Cannot render the BASM stack."
-  render_postal_config || fail "Cannot render Postal configuration."
   prepare_full_profile
 
   log "System setup complete"
@@ -1315,10 +1343,10 @@ promote_to_production() {
 
   for variable in DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE HTTP_PORT HTTPS_PORT \
     LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT FLUXER_DOMAIN FLUXER_PROXY_PORT FLUXER_VOICE_TCP_PORT FLUXER_VOICE_UDP_PORT SMTP_PORT SMTP_BIND_ADDRESS ERP_URL MAIL_URL CLOUD_URL \
+    MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT \
     RUSTDESK_NAT_PORT RUSTDESK_ID_PORT RUSTDESK_RELAY_PORT \
     BACKUP_LOCATION PRIMARY_DOMAIN DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD \
-    NEXTCLOUD_DB_PASSWORD POSTAL_DB_PASSWORD POSTAL_ADMIN_PASSWORD POSTAL_RAILS_SECRET \
-    POSTAL_WEB_PROTOCOL RESTIC_PASSWORD; do
+    NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL RESTIC_PASSWORD; do
     unset "$variable"
   done
 
@@ -1349,7 +1377,10 @@ promote_to_production() {
 port_summary() {
   printf 'Port Profile: %s\n' "${PORT_PROFILE:-custom}"
   printf 'Proxy HTTP: %s/tcp\nProxy HTTPS: %s/tcp\n' "$HTTP_PORT" "$HTTPS_PORT"
-  printf 'Postal SMTP: %s/tcp\n' "$SMTP_PORT"
+  printf 'Mail server SMTP: %s/tcp\n' "$SMTP_PORT"
+  printf 'Mailbox SMTP submission: %s/tcp\nMailbox IMAP over TLS: %s/tcp\n' \
+    "$MAILBOX_SUBMISSION_PORT" "$MAILBOX_IMAPS_PORT"
+  printf 'Mailbox first-run setup (loopback only): %s/tcp\n' "$MAILBOX_SETUP_PORT"
   printf 'Host SSH (unchanged): %s/tcp\n' "${SSH_PORT:-22}"
   printf 'Reusable install settings: %s/config/basm.env (root-only)\n' "$BASM_ROOT"
   local module_name variable protocol host="$BIND_ADDRESS"
@@ -1392,10 +1423,11 @@ dns_subname() {
   fi
 }
 
-# Writes copy-paste DNS records for a production install (Postal split-hostname layout).
+# Writes copy-paste DNS records for self-hosted Stalwart mail.
 write_dns_records() {
   local file="$1" d="$PRIMARY_DOMAIN"
   local erp_sub cloud_sub mail_sub fluxer_sub
+  local mailbox_host="${MAILBOX_HOSTNAME:-mx.$PRIMARY_DOMAIN}"
   erp_sub="$(dns_subname "$ERP_URL")"
   cloud_sub="$(dns_subname "$CLOUD_URL")"
   mail_sub="$(dns_subname "$MAIL_URL")"
@@ -1411,38 +1443,40 @@ Core hostnames (A)
   @                 A      PUBLIC_IP
   ${erp_sub:-@}     A      PUBLIC_IP
   ${cloud_sub:-@}   A      PUBLIC_IP
-  ${mail_sub:-@}    A      PUBLIC_IP   (Postal web UI and SMTP: $MAIL_URL)
+  ${mail_sub:-@}    A      PUBLIC_IP   (Mail alias; redirects to $mailbox_host)
 $(if module_selected fluxer; then printf '  %-17s A      PUBLIC_IP   (Fluxer chat: %s)\n' "${fluxer_sub:-@}" "$FLUXER_DOMAIN"; fi)
-  mx                A      PUBLIC_IP   (inbound mail host)
+  mx                A      PUBLIC_IP   (mail server: $mailbox_host)
+  autoconfig        CNAME  $mailbox_host.
+  autodiscover      CNAME  $mailbox_host.
+  mta-sts           CNAME  $mailbox_host.
+  ua-auto-config    CNAME  $mailbox_host.
 $(if [[ "${IP_MODE:-static}" == non-static ]]; then printf '  The A records above are kept current by the BASM DDNS job; do not edit them by hand.\n'; fi)
-Postal server-wide records
-  spf               TXT    "v=spf1 a:$MAIL_URL ~all"
-  routes            MX     10 mx.$d.
-  rp                MX     10 mx.$d.
-  rp                TXT    "v=spf1 a mx include:spf.$d ~all"
-  track             CNAME  $MAIL_URL.
 
-Mail domain $d (sending and receiving through Postal)
-  @                 MX     10 mx.$d.
-  @                 TXT    "v=spf1 a mx include:spf.$d ~all"
-  psrp              CNAME  rp.$d.
+Mail domain $d (Stalwart receives and sends user mail)
+  @                 MX     10 $mailbox_host.
+  @                 TXT    "v=spf1 mx -all"
+  mx                TXT    "v=spf1 a -all"
   _dmarc            TXT    "v=DMARC1; p=none; rua=mailto:postmaster@$d"
+  _jmap._tcp        SRV    0 1 443 $mailbox_host.
 
-DKIM (only available after the domain is added in Postal)
-  In Postal open the organization, Domains, then the DNS setup for $d.
-  Copy the DKIM record it shows, which looks like:
-  postal-XXXXXX._domainkey   TXT   "v=DKIM1; t=s; h=sha256; p=..."
-  Add the same type of record for the return path domain (rp.$d) if Postal lists it.
+DKIM
+  After setup, publish the complete DNS zone file shown for $d in Stalwart.
+  It includes the current DKIM keys and service-discovery records. Merge its
+  SPF and DMARC entries with existing records; never publish duplicate SPF
+  records or replace other TXT records used by the domain.
 
 If you also keep a separate fixed record elsewhere, note that only ONE SPF TXT
-record may exist per name. Replace any older SPF record instead of adding a second.
-Ask the ISP to set reverse DNS (PTR) of PUBLIC_IP to $MAIL_URL.
+record may exist at the domain apex. Replace any older SPF record instead of
+adding a second.
+Ask the ISP to set reverse DNS (PTR) of PUBLIC_IP to $mailbox_host.
 
 One-step setup for deSEC
 ------------------------
 Paste the following into a terminal on any computer. It asks for a deSEC API
 token (hidden), detects the public IPv4, and creates or updates the records
-above, except DKIM. The token is not stored.
+above, except TXT records. Add or merge the SPF, DMARC and DKIM TXT records
+manually so existing verification and policy records are not overwritten. The
+token is not stored.
 
 read -rsp 'deSEC API token: ' TOKEN; echo
 PUBLIC_IP="\$(curl -4 -fsS https://api.ipify.org)"
@@ -1454,15 +1488,12 @@ BODY="\$(cat <<DNSJSON
  {"subname":"$mail_sub","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
 $(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":3600,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub"; fi)
  {"subname":"mx","type":"A","ttl":3600,"records":["\$PUBLIC_IP"]},
- {"subname":"","type":"MX","ttl":3600,"records":["10 mx.$d."]},
- {"subname":"routes","type":"MX","ttl":3600,"records":["10 mx.$d."]},
- {"subname":"rp","type":"MX","ttl":3600,"records":["10 mx.$d."]},
- {"subname":"","type":"TXT","ttl":3600,"records":["\\"v=spf1 a mx include:spf.$d ~all\\""]},
- {"subname":"rp","type":"TXT","ttl":3600,"records":["\\"v=spf1 a mx include:spf.$d ~all\\""]},
- {"subname":"spf","type":"TXT","ttl":3600,"records":["\\"v=spf1 a:$MAIL_URL ~all\\""]},
- {"subname":"_dmarc","type":"TXT","ttl":3600,"records":["\\"v=DMARC1; p=none; rua=mailto:postmaster@$d\\""]},
- {"subname":"track","type":"CNAME","ttl":3600,"records":["$MAIL_URL."]},
- {"subname":"psrp","type":"CNAME","ttl":3600,"records":["rp.$d."]}
+ {"subname":"autoconfig","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
+ {"subname":"autodiscover","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
+ {"subname":"mta-sts","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
+ {"subname":"ua-auto-config","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
+ {"subname":"_jmap._tcp","type":"SRV","ttl":3600,"records":["0 1 443 $mailbox_host."]},
+ {"subname":"","type":"MX","ttl":3600,"records":["10 $mailbox_host."]}
 ]
 DNSJSON
 )"
@@ -1475,7 +1506,7 @@ A result of HTTP 200 means the records were saved. DNS changes can take a few
 minutes to appear. Verify with:
   dig +short MX $d
   dig +short TXT $d
-  dig +short A $MAIL_URL
+  dig +short A $mailbox_host
 EOF
 }
 
@@ -1573,12 +1604,17 @@ Address: $scheme://$CLOUD_URL:$web_port
 Username: $NEXTCLOUD_ADMIN_USER
 Initial password: $NEXTCLOUD_ADMIN_PASSWORD
 
-Mail administration (Postal)
-Address: $scheme://$MAIL_URL:$web_port
-Username: $ADMIN_EMAIL
-Initial password: $POSTAL_ADMIN_PASSWORD
-Postal manages mail delivery; it is not an employee inbox or webmail service.
-The email address above is a login name, not a newly created mailbox.
+Email administration (Stalwart)
+Address: $scheme://$MAILBOX_HOSTNAME:$web_port/admin
+Mail server: $MAILBOX_HOSTNAME
+IT creates the first administrator and mailbox during first-time setup. The
+password is displayed only once by the setup wizard; have IT record it securely.
+
+THUNDERBIRD SETTINGS (after IT creates your mailbox)
+Email address and username: your complete email address
+Incoming server: $MAILBOX_HOSTNAME, IMAP, port 993, SSL/TLS
+Outgoing server: $MAILBOX_HOSTNAME, SMTP, port 465, SSL/TLS
+Use the mailbox password for both. Do not use the Stalwart administrator login.
 
 These are administrator accounts. Ask IT to create a personal account for each
 employee; do not share these administrator passwords for everyday work.
@@ -1635,8 +1671,6 @@ Technical database accounts, not browser logins:
 ERPNext database server: erp-db; username: root; password: $DB_ROOT_PASSWORD
 Nextcloud database server: nextcloud-db; username: root; password: $DB_ROOT_PASSWORD
 Nextcloud application database: nextcloud; username: nextcloud; password: $NEXTCLOUD_DB_PASSWORD
-Postal database server: postal-db; username: root; password: $POSTAL_DB_PASSWORD
-Postal application signing secret (not a login): $POSTAL_RAILS_SECRET
 Other application-managed keys remain in the protected application data and
 configuration backups. Do not change database passwords in this document.
 
@@ -1719,12 +1753,12 @@ Bind address: $BIND_ADDRESS
 Nextcloud: http://$BIND_ADDRESS:$HTTP_PORT
 Start page: http://$home_host:$HTTP_PORT
 ERPNext: http://$ERP_URL:$HTTP_PORT
-Postal: http://$MAIL_URL:$HTTP_PORT
+Email administration: http://$MAILBOX_HOSTNAME:$HTTP_PORT/admin
 With a localhost binding, use the browser on the server itself.
 For LAN testing, rerun the wizard and select the server's private IPv4 as the
 bind address. On each client, map these names to that address in private DNS
 or its hosts file (Linux: /etc/hosts; Windows: C:\Windows\System32\drivers\etc\hosts):
-  $BIND_ADDRESS $home_host $ERP_URL $MAIL_URL $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
+  $BIND_ADDRESS $home_host $ERP_URL $MAIL_URL $MAILBOX_HOSTNAME $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
 Use the selected private IPv4 instead of localhost in that entry.
 HTTP is unencrypted: use test data and a trusted network only.
 SMTP is loopback-only on $SMTP_PORT; public mail and HTTPS are not configured.
@@ -1747,7 +1781,7 @@ alone will not work through carrier-grade NAT. Request a public, preferably
 static IPv4 and ask whether inbound AND outbound TCP 25 are allowed.
 At the domain provider, create the DNS records in:
   $handover_dir/dns-records.txt
-It lists the A, MX, SPF, DMARC and Postal records and, for deSEC, a paste-ready
+It lists the A, MX, SPF, DMARC and mail records and, for deSEC, a paste-ready
 command that creates them. The A records point to the public IPv4 for:
   $PRIMARY_DOMAIN
   $ERP_URL
@@ -1767,14 +1801,20 @@ For every rule, destination is the reserved private server IPv4 from step 2.
 Service        Protocol    External port    Internal (server) port
 HTTP           TCP         $HTTP_PORT               $HTTP_PORT
 HTTPS          TCP         $HTTPS_PORT              $HTTPS_PORT
-Postal SMTP    TCP         25               $SMTP_PORT
+Mail SMTP      TCP         25               $SMTP_PORT
 $(if module_selected fluxer; then printf 'Fluxer media   TCP         %s               %s\nFluxer media   UDP         %s               %s\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 $(if module_selected rustdesk; then printf 'RustDesk NAT   TCP         %s               %s\nRustDesk ID    TCP/UDP     %s               %s\nRustDesk relay TCP         %s               %s\n' "$RUSTDESK_NAT_PORT" "$RUSTDESK_NAT_PORT" "$RUSTDESK_ID_PORT" "$RUSTDESK_ID_PORT" "$RUSTDESK_RELAY_PORT" "$RUSTDESK_RELAY_PORT"; fi)
+Optional mail-client access from outside the LAN/VPN:
+Mailbox SMTP   TCP         465              $MAILBOX_SUBMISSION_PORT
+Mailbox IMAP   TCP         993              $MAILBOX_IMAPS_PORT
+Add these rules only when off-network mail-client access is intended. For
+LAN/VPN-only clients, keep these ports private and use private DNS and routing.
 If HTTP uses a custom port, ALSO forward external TCP 80 to internal $HTTP_PORT.
 If HTTPS uses a custom port, ALSO forward external TCP 443 to internal $HTTPS_PORT.
 These additional rules allow normal browser access, HTTPS redirects, and
 Let's Encrypt HTTP certificate validation. Do not add a duplicate rule if the
-selected port is already 80 or 443. Public mail requires external TCP 25.
+selected port is already 80 or 443. Internet mail delivery requires external
+TCP 25. The loopback-only first-run mailbox setup port must not be forwarded.
 Save/apply the rules. The URLs in the user document use the selected web ports;
 the standard public ports also work with the additional rules above.
 If the server firewall is enabled, permit these selected internal ports too.
@@ -1787,15 +1827,43 @@ ports private and restrict them on the host as well as at the router.
 $(if module_selected fluxer; then printf 'Fluxer voice requires TCP %s and UDP %s forwarded to the server for calls.\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 
 5. FINISH MAIL SETUP
-Sign in to Postal using the user document. Configure your organization's mail
-domains and sending servers, then publish the DKIM record Postal shows for the
-domain; the other MX, SPF and DMARC records are in dns-records.txt (step 3).
-An A record and port forwarding alone are not enough.
-Ask the ISP to set reverse DNS (PTR) for the public IP to $MAIL_URL.
-Configure application SMTP credentials in Postal; BASM does not generate them.
-Postal is a mail delivery platform, not an IMAP/POP mailbox or webmail service.
-Test sending AND receiving with an unrelated external mail provider. Do not
-promise working mail until DNS, provider restrictions and delivery are checked.
+Open the Stalwart first-run setup page through an SSH tunnel:
+  ssh -L $MAILBOX_SETUP_PORT:127.0.0.1:$MAILBOX_SETUP_PORT <server-user>@<server-address>
+Then open http://127.0.0.1:$MAILBOX_SETUP_PORT on that computer. Read the
+temporary setup login from the container log:
+  sudo docker logs ${BASM_CONTAINER_PREFIX}-stalwart-mail
+Choose $MAILBOX_HOSTNAME as the server hostname and $PRIMARY_DOMAIN as the
+mail domain. Enable Stalwart's automatic TLS certificate for the mail host.
+Complete setup, restart the container, then open
+https://$MAILBOX_HOSTNAME/admin. The setup wizard shows the permanent
+administrator password only once; store it privately.
+
+Stalwart admin sign-in uses OAuth metadata bound to the canonical HTTPS
+hostname https://$MAILBOX_HOSTNAME. Do not sign in through localhost, an IP
+address or the mail alias; those origins can fail with "Unknown client id."
+Wait until a trusted certificate is valid, then sign in at
+https://$MAILBOX_HOSTNAME/admin and create the owner's mailbox. From
+Management -> Domains, publish the complete generated DNS zone file, merging
+SPF and DMARC with existing records. Confirm that
+autoconfig, autodiscover, mta-sts and ua-auto-config resolve to
+$MAILBOX_HOSTNAME before expecting a valid certificate. Do not bypass
+certificate warnings. Ask the ISP to set reverse DNS (PTR) for the public IP
+to $MAILBOX_HOSTNAME.
+
+To send invoices from ERPNext, create a dedicated Stalwart account for the
+sender address, then add an outgoing Email Account in ERPNext using
+$MAILBOX_HOSTNAME, port 465, SSL/TLS, and that account's credentials. Do not
+reuse the Stalwart administrator login.
+
+For production, in Settings -> Network -> Listeners add an HTTPS proxy listener:
+name https-proxy, HTTP protocol, bind 0.0.0.0:8443, implicit TLS enabled, and
+override proxy trusted networks set only to 172.31.255.2. BASM Traefik sends
+PROXY protocol v2 over its isolated mail-proxy network.
+
+Test a message from Thunderbird to an unrelated external mailbox, reply, and
+confirm both delivery directions plus SPF/DKIM/DMARC results. Then send a test
+ERPNext invoice email. Do not promise working mail until DNS, provider
+restrictions, and delivery are checked.
 EOF
   fi
   if module_selected rustdesk; then
@@ -1823,7 +1891,7 @@ One-shot initializer containers should exit successfully (code 0). Investigate
 unhealthy containers, restart loops, and nonzero exits before handing over.
 Open each service URL and actually sign in. In production, test public URLs
 using mobile data with Wi-Fi off. Use https://$ERP_URL, https://$CLOUD_URL,
-https://$MAIL_URL$(if module_selected fluxer; then printf ' and https://%s' "$FLUXER_DOMAIN"; fi) when external 443 maps to the selected server HTTPS port.
+https://$MAILBOX_HOSTNAME$(if module_selected fluxer; then printf ' and https://%s' "$FLUXER_DOMAIN"; fi) when external 443 maps to the selected server HTTPS port.
 Do not dismiss certificate warnings. DNS or port changes can take time;
 recheck DNS and Traefik logs if certificates are not issued.
 If Uptime Kuma is selected, complete its first-run account setup privately.
@@ -1879,7 +1947,7 @@ credential_summary() {
       "- KeePass access: $BASM_ROOT/handover/for-the-user.txt (private)"
   else
     printf '%s\n' '- ERPNext user: Administrator' "- Nextcloud user: $NEXTCLOUD_ADMIN_USER" \
-      "- Postal user: $ADMIN_EMAIL" "- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)"
+      "- Email administrator address: $MAILBOX_HOSTNAME" "- All initial login details: $BASM_ROOT/handover/for-the-user.txt (private)"
   fi
   printf '%s\n' "- Setup and network guide: $BASM_ROOT/handover/for-it.txt"
 }
@@ -1908,15 +1976,15 @@ HTTP URLs (no public DNS or certificates required):
 - Cloud: http://$BIND_ADDRESS:$HTTP_PORT
 - Cloud: http://$CLOUD_URL:$HTTP_PORT
 - ERP: http://$ERP_URL:$HTTP_PORT
-- Mail: http://$MAIL_URL:$HTTP_PORT
+- Email administration: http://$MAILBOX_HOSTNAME:$HTTP_PORT/admin
 
 Initial login details:
 $(credential_summary)
 
-For LAN clients, map home.$PRIMARY_DOMAIN, $ERP_URL, $MAIL_URL and $CLOUD_URL
-to $BIND_ADDRESS in each client's hosts file or private DNS.
+For LAN clients, map home.$PRIMARY_DOMAIN, $ERP_URL, $MAIL_URL, $MAILBOX_HOSTNAME
+and $CLOUD_URL to $BIND_ADDRESS in each client's hosts file or private DNS.
 Local access uses HTTP on $BIND_ADDRESS:$HTTP_PORT.
-Local mode initializes ERPNext, Nextcloud, and Postal's web UI. Postal SMTP binds only to loopback port $SMTP_PORT; public mail delivery requires a production domain and DNS records.
+Local mode initializes ERPNext, Nextcloud and Stalwart. SMTP binds only to loopback port $SMTP_PORT; the Stalwart first-run setup listener is also loopback-only on port $MAILBOX_SETUP_PORT. Internet mail delivery requires a production domain and DNS records.
 Restic encrypts daily backups to $BACKUP_LOCATION/restic.
 LAMP and Uptime Kuma start automatically when selected; WireGuard generates configuration only.
 Add local-compatible modules: sudo ./install.sh --module <name> (choose local)
@@ -1943,7 +2011,8 @@ Installed Modules:
 URLs:
 - Start page: https://$PRIMARY_DOMAIN:$HTTPS_PORT
 - ERP: https://$ERP_URL:$HTTPS_PORT
-- Mail: https://$MAIL_URL:$HTTPS_PORT
+- Email administration: https://$MAILBOX_HOSTNAME:$HTTPS_PORT/admin
+- Mail server: $MAILBOX_HOSTNAME
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT
 
 Initial login details:
@@ -1959,14 +2028,17 @@ DNS Records Required:
 - A record for $PRIMARY_DOMAIN -> Public IP
 - A record for $ERP_URL -> Public IP
 - A record for $MAIL_URL -> Public IP
+- A record for $MAILBOX_HOSTNAME -> Public IP
 - A record for $CLOUD_URL -> Public IP
 $(if module_selected fluxer; then printf '%s\n' "- A record for $FLUXER_DOMAIN -> Public IP"; fi)
-- MX, SPF, DKIM, and DMARC records for the mail domains shown in Postal
+- MX, SPF, DKIM, and DMARC records for Stalwart
 
 Router Port Forwarding Required:
 - Forward TCP $HTTP_PORT and $HTTPS_PORT to the same server ports
 - Also forward public TCP 80 -> $HTTP_PORT and TCP 443 -> $HTTPS_PORT if custom
-- Forward public TCP 25 -> $SMTP_PORT for Postal mail delivery
+- Forward public TCP 25 -> $SMTP_PORT for Stalwart mail delivery
+- For mail clients outside the LAN/VPN, forward public TCP 465 -> $MAILBOX_SUBMISSION_PORT and TCP 993 -> $MAILBOX_IMAPS_PORT
+- Keep 465/993 private for LAN/VPN-only clients and resolve $MAILBOX_HOSTNAME to the BASM LAN address there
 - Do not expose SSH by default; see the private For IT guide for setup steps
 
 Post-installation Checklist:

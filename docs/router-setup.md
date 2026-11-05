@@ -23,7 +23,12 @@ Forward the following ports to the BASM server:
 
 - TCP 80 -> BASM host
 - TCP 443 -> BASM host
-- TCP 25 -> BASM host for Postal SMTP
+- TCP 25 -> BASM host for Stalwart SMTP
+
+For Thunderbird or other mail clients connecting from outside the LAN/VPN,
+also forward TCP 465 (submission) and TCP 993 (IMAPS) to BASM. For LAN/VPN-only
+mail clients, keep those ports private and use private DNS so the canonical
+`mx.<domain>` hostname resolves to BASM's LAN address.
 
 When Fluxer is selected, also forward its configured voice-media TCP and UDP
 ports to the same ports on the BASM host. The values are listed in the private
@@ -31,8 +36,10 @@ IT handover. Do not forward Fluxer's internal proxy listener.
 
 These are the standard ports. With custom server ports, forward public TCP 80
 to the selected HTTP port, TCP 443 to the selected HTTPS port, and TCP 25 to
-the selected SMTP port. Also forward the selected HTTP/HTTPS ports to the same
-server ports so the custom-port URLs in the handover work from outside.
+the selected Stalwart SMTP port. Forward TCP 465 and TCP 993 only when
+off-network mail-client access is intended. Also forward the selected
+HTTP/HTTPS ports to the same server ports so the custom-port URLs in the
+handover work from outside.
 Use the server's reserved private IPv4 address as every rule's destination.
 
 When Fluxer is selected, also create an A record for `chat.<domain>` and forward
@@ -48,12 +55,14 @@ Create A records for:
 - erp.example.com -> public IP
 - mail.example.com -> public IP
 - cloud.example.com -> public IP
+- mx.example.com -> public IP
 - chat.example.com -> public IP (when Fluxer is selected)
 
-Mail also needs the MX, SPF, DKIM, and DMARC records specified by Postal and
-reverse DNS (PTR) arranged with the ISP. Confirm the ISP permits inbound and
-outbound TCP 25 and provides a public IP without carrier-grade NAT. Postal
-does not provide employee mailboxes or webmail.
+Mail also needs the MX, SPF, DKIM, and DMARC records specified in the generated
+DNS handover, plus reverse DNS (PTR) arranged with the ISP. Stalwart handles
+inbound and outbound SMTP, user mailboxes, IMAP and authenticated SMTP
+submission. Confirm the ISP permits inbound and outbound TCP 25 and provides a
+public IP without carrier-grade NAT.
 
 ### Entering records in deSEC
 
@@ -74,27 +83,21 @@ current public IPv4 address. For customized hostnames, use the generated
 | A | `cloud` | | `PUBLIC_IPV4` | 3600 |
 | A | `mail` | | `PUBLIC_IPV4` | 3600 |
 | A | `mx` | | `PUBLIC_IPV4` | 3600 |
+| CNAME | `autoconfig` | | `mx.example.com.` | 3600 |
+| CNAME | `autodiscover` | | `mx.example.com.` | 3600 |
 | MX | *(blank)* | 10 | `mx.example.com.` | 3600 |
-| MX | `routes` | 10 | `mx.example.com.` | 3600 |
-| MX | `rp` | 10 | `mx.example.com.` | 3600 |
-| TXT | `spf` | | `"v=spf1 a:mail.example.com ~all"` | 3600 |
-| TXT | *(blank)* | | `"v=spf1 a mx include:spf.example.com ~all"` | 3600 |
-| TXT | `rp` | | `"v=spf1 a mx include:spf.example.com ~all"` | 3600 |
-| TXT | `_dmarc` | | `"v=DMARC1; p=none"` | 3600 |
-| CNAME | `psrp` | | `rp.example.com.` | 3600 |
-| CNAME | `track` | | `mail.example.com.` | 3600 |
+| TXT | *(blank)* | | `"v=spf1 a mx ~all"` | 3600 |
+| TXT | `_dmarc` | | `"v=DMARC1; p=none; rua=mailto:postmaster@example.com"` | 3600 |
 
 deSEC requires **surrounding double quotation marks for TXT content**; enter
 them as shown. MX Preference is a separate field: enter `10` there, not as
 part of the Hostname. The trailing dot marks an absolute DNS hostname.
 Only add `chat` (or your configured Fluxer hostname) if BASM Fluxer is selected.
 
-Publish the exact DKIM subname and quoted TXT content shown in Postal's domain
-DNS setup; the selector and key are deployment-specific. Retain the old DKIM
-selector while the old mail system is still in use. Have only **one SPF record
-per name**: edit an existing SPF record rather than adding a second. If other
-providers also send mail for the domain, preserve their authorization in that
-single policy. `p=none` monitors DMARC; it does not enforce rejection.
+Publish the exact DKIM record shown by Stalwart. Retain old DKIM selectors
+during migration. Have only
+**one SPF record per name**: edit an existing SPF record rather than adding a
+second. `p=none` monitors DMARC; it does not enforce rejection.
 
 Do not wipe the zone or delete NS, existing mail, or certificate-challenge
 records during migration. Export the existing records before making changes.
@@ -109,7 +112,7 @@ BASM's non-static updater manages A records for the root, ERP, mail, cloud and
 lets both update the same zone; avoid configuring both to manage the same name.
 Use separate API tokens with record-scoped permissions where possible.
 
-DDNS updates public addresses, not the complete Postal DNS configuration above.
+DDNS updates public addresses, not the complete mail DNS configuration above.
 One public IPv4 also does not route HTTPS to different internal servers by
 hostname: that needs an explicitly configured shared reverse proxy, or private
 DEN access through its VPN. Preserve the old server and forwarding until the
@@ -143,5 +146,5 @@ configuration; the installer does not modify SSH settings.
 Production LAMP and Uptime Kuma default to loopback-only listeners. Use SSH
 tunnels, or explicitly configure a private LAN `MANAGEMENT_BIND_ADDRESS`.
 Existing module bindings are not changed until those modules are regenerated.
-Public ERP, cloud and Postal routes remain public; BASM does not copy DEN's
+Public ERP, cloud and mail routes remain public; BASM does not copy DEN's
 private-home-app firewall policy onto a business server.

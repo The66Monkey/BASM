@@ -7,14 +7,10 @@
 - New service passwords use 32 cryptographically random alphanumeric characters,
   including uppercase letters, lowercase letters, and digits. Existing passwords
   are preserved on reruns and upgrades; they are not automatically rotated.
-- Postal's application signing secret remains 64 hexadecimal characters;
-  cryptographic keys are not shortened by the password policy.
 - The DDNS API token, if used, is stored only in that file.
 - Saved environment files are parsed as data, without executing substitutions.
 - WireGuard keys and prepared WireGuard configs are secrets (`0600`) and are
   kept across reruns.
-- Postal's mounted config and signing key are readable by Postal's non-root
-  container account but are not world-readable.
 - The installation summary lists account names only. Passwords are never
   printed in the summary or installer log.
 
@@ -67,5 +63,11 @@ preserved when regenerating handovers.
 ## Production mail
 
 Reserved addresses such as `admin@example.com` are rejected as the Let's Encrypt
-contact. Real mail delivery needs correct MX/SPF/DKIM/DMARC records, a stable
-IP with reverse DNS, and a provider that permits TCP 25.
+contact. Stalwart receives external SMTP on TCP 25, stores user mailboxes, and
+provides IMAP and authenticated SMTP submission. Its first-run setup listener
+binds only to loopback; access it through an SSH tunnel.
+
+Real self-hosted delivery still needs correct MX/SPF/DKIM/DMARC records, a
+stable public IP with matching reverse DNS, and an ISP/host that permits
+inbound and outbound TCP 25. Publish Stalwart's DKIM record. The mailbox service
+uses an embedded database and does not need another MariaDB.
