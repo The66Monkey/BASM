@@ -81,7 +81,8 @@ Create A records for:
 
 Mail also needs the MX, SPF, DKIM, and DMARC records specified in the generated
 DNS handover. Dynamic IPv4 is supported: BASM's default deSEC updater refreshes
-its A records every 15 minutes. Stalwart handles inbound and outbound SMTP,
+its A records every four hours; run the updater manually to check sooner after
+an address change. Stalwart handles inbound and outbound SMTP,
 user mailboxes, IMAP and authenticated SMTP submission. Confirm the network
 path permits inbound and outbound TCP 25 and provides a reachable public IP
 without carrier-grade NAT. PTR is controlled by the IP address-range owner,
@@ -116,7 +117,9 @@ current public IPv4 address. For customized hostnames, use the generated
 deSEC requires **surrounding double quotation marks for TXT content**; enter
 them as shown. MX Preference is a separate field: enter `10` there, not as
 part of the Hostname. The trailing dot marks an absolute DNS hostname.
-The A-record TTL is 300 seconds so dynamic address changes propagate sooner.
+For dynamic-IP installs, the A-record TTL is 300 seconds so records can
+propagate promptly after an update; it does not change how often BASM checks
+the public IP.
 Only add `chat` (or your configured Fluxer hostname) if BASM Fluxer is selected.
 
 Publish the exact DKIM record shown by Stalwart. Retain old DKIM selectors

@@ -52,8 +52,15 @@ For **Public IP type**, BASM defaults to `N` (dynamic IP) and updates the
 domain's deSEC A records automatically. Enter `S` if you have a static IP.
 Letters are case-insensitive; `static` and `non-static` also work. Dynamic mode
 asks for a deSEC API token once and stores it with the deployment settings.
-The updater checks every 15 minutes and only contacts deSEC when the public IP
-or managed hostnames change. You can choose `S` if your DNS is managed elsewhere.
+The updater checks every four hours and only contacts deSEC when the public IP
+or managed hostnames change. To check sooner after an IP change, run:
+
+```sh
+sudo /bin/bash /opt/basm/maintenance/ddns-update.sh /opt/basm
+```
+
+For a custom installation root, replace both `/opt/basm` paths with that root.
+You can choose `S` if your DNS is managed elsewhere.
 
 ### Choosing a timezone
 

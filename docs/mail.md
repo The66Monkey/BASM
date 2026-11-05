@@ -96,7 +96,8 @@ Self-hosting avoids a third-party email provider, but still depends on a working
 domain/DNS service, a reachable public IPv4 address, and a network path that
 permits inbound and outbound TCP 25. BASM supports dynamic IPv4: the installer
 sets up deSEC updates for its managed A records by default, checking every
-15 minutes. A changed address can take up to 15 minutes to appear in DNS.
+four hours. After an IP change, run the DDNS updater manually to refresh DNS
+sooner. A changed address can otherwise take up to four hours to be detected.
 Reverse DNS (PTR) is controlled by the address-range owner and is not managed
 by deSEC or BASM. If you do not have reverse-DNS control, mail can still be
 received and sent, but some recipient servers may reject or junk outbound mail

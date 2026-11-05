@@ -99,7 +99,7 @@ See [testing](testing.md) for automated coverage and remaining live acceptance.
 
 ## Dynamic DNS
 
-For dynamic-IP installs, `/etc/cron.d/basm-ddns-*` runs every 15 minutes and
+For dynamic-IP installs, `/etc/cron.d/basm-ddns-*` runs every four hours and
 updates deSEC A records for the primary, ERP, mail, cloud and `mx` hostnames
 (plus Fluxer when selected) when the public IPv4 changes. The updater tries two
 public IPv4 lookup services. The token lives in

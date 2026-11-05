@@ -1050,7 +1050,7 @@ ddns_cron_file() {
   printf '%s/basm-ddns-%s' "${BASM_CRON_DIR:-/etc/cron.d}" "$identifier"
 }
 
-# Dynamic-IP installs check the public IPv4 every 15 minutes and update deSEC.
+# Dynamic-IP installs check the public IPv4 every 4 hours and update deSEC.
 install_ddns_updater() (
   umask 077
   local maintenance_dir="$BASM_ROOT/maintenance" cron_file
@@ -1067,12 +1067,12 @@ install_ddns_updater() (
   cat > "$cron_file" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-*/15 * * * * root /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT"
+17 */4 * * * root /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT"
 EOF
   chmod 644 "$cron_file" || fail "Cannot set cron permissions."
   systemctl enable --now cron || fail "Cannot enable the DNS update scheduler."
-  /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT" || warn "Initial deSEC DNS update failed; see $BASM_ROOT/logs/ddns.log. Cron retries every 15 minutes."
-  log "deSEC DNS updates scheduled every 15 minutes for the dynamic public IP."
+  /bin/bash "$maintenance_dir/ddns-update.sh" "$BASM_ROOT" || warn "Initial deSEC DNS update failed; see $BASM_ROOT/logs/ddns.log. Cron retries every 4 hours."
+  log "deSEC DNS updates scheduled every 4 hours for the dynamic public IP."
 )
 
 run_module_install() {
@@ -1797,7 +1797,7 @@ $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
 unless IPv6 routing and firewall rules have also been configured and tested.$(if [[ "${IP_MODE:-non-static}" == non-static ]]; then printf '\n%s' \
-  "This install uses a dynamic IP: every 15 minutes cron updates these deSEC" \
+  "This install uses a dynamic IP: every 4 hours cron updates these deSEC" \
   "records if the public IPv4 changed. Log: $BASM_ROOT/logs/ddns.log"; fi)
 
 4. FORWARD THE ROUTER PORTS

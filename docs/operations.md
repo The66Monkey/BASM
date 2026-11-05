@@ -161,13 +161,22 @@ the six-month schedule.
 ## Dynamic IP (non-static installs)
 
 New production installs default to dynamic-IP mode. The DDNS cron job checks
-every 15 minutes, updating A records for the root, ERP, mail, cloud, `mx`, and
+every four hours, updating A records for the root, ERP, mail, cloud, `mx`, and
 selected Fluxer when the public IPv4 changes. All names must belong to the same
 deSEC domain. Logs: `logs/ddns.log`.
 
-Access may be unavailable for up to roughly 15 minutes after an address change.
-Dynamic IPs can also affect mail deliverability, and DDNS does not change PTR
-records. See [DNS setup](router-setup.md) for records DDNS does not manage.
+To check the public IP and update DNS immediately, run:
+
+```sh
+sudo /bin/bash /opt/basm/maintenance/ddns-update.sh /opt/basm
+```
+
+For a custom installation root, replace both `/opt/basm` paths with that root.
+The script updates deSEC only if the detected IP differs from the saved one.
+Without a manual check, access may be unavailable for up to roughly four hours
+after an address change. Dynamic IPs can also affect mail deliverability, and
+DDNS does not change PTR records. See [DNS setup](router-setup.md) for records
+DDNS does not manage.
 
 ## Private management services
 
