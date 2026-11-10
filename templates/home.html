@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f7f5">
+  <meta name="theme-color" content="#f3f5f8">
   <title>{{COMPANY}} - BASM</title>
   <style>
     :root {
       color-scheme: light dark;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.6;
-      color: #17231e;
-      background: #f5f7f5;
+      color: #1d2b3a;
+      background: #f3f5f8;
       font-synthesis: none;
       text-rendering: optimizeLegibility;
       --surface: rgba(255, 255, 255, .86);
-      --border: #dce5df;
-      --muted: #53645b;
-      --accent: #087f5b;
-      --soft-accent: #e4f4ec;
-      --shadow: 0 16px 40px rgba(27, 55, 42, .08);
+      --border: #d9e0e8;
+      --muted: #596a7b;
+      --accent: #345777;
+      --soft-accent: #e8eef4;
+      --shadow: 0 16px 40px rgba(31, 49, 69, .08);
     }
     * { box-sizing: border-box; }
     body {
@@ -27,9 +27,9 @@
       margin: 0;
       padding: clamp(1rem, 4vw, 3.5rem);
       background:
-        radial-gradient(ellipse at 12% 0%, rgba(108, 197, 151, .17), transparent 34rem),
-        radial-gradient(ellipse at 96% 18%, rgba(155, 201, 178, .18), transparent 30rem),
-        #f5f7f5;
+        radial-gradient(ellipse at 12% 0%, rgba(123, 153, 183, .2), transparent 34rem),
+        radial-gradient(ellipse at 96% 18%, rgba(171, 187, 204, .2), transparent 30rem),
+        #f3f5f8;
     }
     .page { width: min(100%, 70rem); margin: 0 auto; }
     .hero {
@@ -37,9 +37,9 @@
       align-items: center;
       gap: clamp(1.25rem, 4vw, 3rem);
       padding: clamp(1.5rem, 5vw, 4rem);
-      border: 1px solid rgba(220, 229, 223, .85);
+      border: 1px solid rgba(217, 224, 232, .9);
       border-radius: 2rem;
-      background: linear-gradient(130deg, rgba(255, 255, 255, .95), rgba(235, 246, 239, .86));
+      background: linear-gradient(130deg, rgba(255, 255, 255, .96), rgba(235, 240, 246, .9));
       box-shadow: var(--shadow);
     }
     .mascot {
@@ -49,7 +49,7 @@
       object-fit: cover;
       border: 5px solid white;
       border-radius: 1.5rem;
-      box-shadow: 0 8px 24px rgba(27, 55, 42, .12);
+      box-shadow: 0 8px 24px rgba(31, 49, 69, .12);
     }
     .eyebrow {
       margin: 0 0 .45rem;
@@ -61,7 +61,8 @@
     }
     h1, h2, p { margin-top: 0; }
     h1 { margin-bottom: .5rem; font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.08; letter-spacing: -.045em; }
-    .hero p:last-child { max-width: 42rem; margin-bottom: 0; color: var(--muted); font-size: 1.08rem; }
+    .hero > div { min-width: 0; }
+    .hero p:last-child { max-width: 42rem; margin-bottom: 0; color: var(--muted); font-size: 1.08rem; overflow-wrap: anywhere; }
     main { padding: clamp(2rem, 5vw, 3.5rem) 0 1rem; }
     .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; }
     h2 { margin-bottom: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -.025em; }
@@ -78,15 +79,15 @@
       background: var(--surface);
       color: inherit;
       text-decoration: none;
-      box-shadow: 0 5px 16px rgba(27, 55, 42, .035);
+      box-shadow: 0 5px 16px rgba(31, 49, 69, .035);
       transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
     }
     .service-card:hover, .service-card:focus-visible {
       transform: translateY(-2px);
-      border-color: #9acbb3;
-      box-shadow: 0 12px 26px rgba(27, 55, 42, .1);
+      border-color: #9aafc4;
+      box-shadow: 0 12px 26px rgba(31, 49, 69, .1);
     }
-    .service-card:focus-visible { outline: 3px solid #35a879; outline-offset: 3px; }
+    .service-card:focus-visible { outline: 3px solid #345777; outline-offset: 3px; }
     .service-mark {
       display: grid;
       width: 2.85rem;
@@ -95,16 +96,16 @@
       place-items: center;
       border-radius: .9rem;
       background: var(--soft-accent);
-      color: #087f5b;
+      color: #345777;
       font-size: 1.05rem;
       font-weight: 800;
       letter-spacing: -.04em;
     }
-    .mark-nextcloud { background: #e8f0ff; color: #3168c9; }
-    .mark-stalwart { background: #eee9ff; color: #6747bd; }
-    .mark-fluxer { background: #f3eaff; color: #7a39c2; }
+    .mark-nextcloud { background: #e5edf5; color: #365b7d; }
+    .mark-stalwart { background: #e9edf4; color: #455e7b; }
+    .mark-fluxer { background: #ececf3; color: #535d75; }
     .service-name { font-weight: 680; }
-    .service-arrow { margin-left: auto; color: #718179; font-size: 1.25rem; }
+    .service-arrow { margin-left: auto; color: #718091; font-size: 1.25rem; }
     .note, footer {
       margin-top: 1.35rem;
       padding: 1.15rem 1.3rem;
@@ -115,7 +116,7 @@
       font-size: .94rem;
     }
     .note p:last-child, footer p:last-child { margin-bottom: 0; }
-    a { color: #087f5b; }
+    a { color: #345777; }
     .documentation { margin: 1.3rem .1rem; }
     footer { margin-top: 2rem; }
     pre {
@@ -123,7 +124,7 @@
       white-space: pre-wrap;
       padding: .85rem 1rem;
       border-radius: .75rem;
-      background: rgba(8, 127, 91, .07);
+      background: rgba(52, 87, 119, .07);
       color: inherit;
       font-size: .9rem;
     }
@@ -136,18 +137,18 @@
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
     @media (prefers-color-scheme: dark) {
-      :root { color: #e5eee8; background: #111a16; --surface: rgba(27, 39, 32, .92); --border: #34463a; --muted: #b0beb5; --accent: #68d3a2; --soft-accent: #203d30; --shadow: 0 18px 44px rgba(0, 0, 0, .2); }
-      body { background: radial-gradient(ellipse at 12% 0%, rgba(33, 107, 72, .28), transparent 34rem), #111a16; }
-      .hero { border-color: var(--border); background: linear-gradient(130deg, #1d2c23, #18271f); }
-      .mascot { border-color: #263a2d; }
-      .service-card:hover, .service-card:focus-visible { border-color: #4a9f76; }
-      .service-mark { color: #83e0b1; }
-      .mark-nextcloud { background: #203658; color: #9ebcff; }
-      .mark-stalwart { background: #362d53; color: #c1a8ff; }
-      .mark-fluxer { background: #38264d; color: #d4a9ff; }
-      .service-arrow { color: #9aaca0; }
-      a { color: #79dcad; }
-      pre { background: rgba(104, 211, 162, .09); }
+      :root { color: #e5ebf1; background: #111923; --surface: rgba(28, 39, 51, .94); --border: #344252; --muted: #b0bdca; --accent: #9bb9d8; --soft-accent: #27384a; --shadow: 0 18px 44px rgba(0, 0, 0, .22); }
+      body { background: radial-gradient(ellipse at 12% 0%, rgba(57, 91, 126, .3), transparent 34rem), #111923; }
+      .hero { border-color: var(--border); background: linear-gradient(130deg, #1e2b39, #1a2633); }
+      .mascot { border-color: #2a3948; }
+      .service-card:hover, .service-card:focus-visible { border-color: #637d99; }
+      .service-mark { color: #abc2db; }
+      .mark-nextcloud { background: #293d52; color: #a7c5e4; }
+      .mark-stalwart { background: #303b4e; color: #b5c3d9; }
+      .mark-fluxer { background: #34384b; color: #bcc1d5; }
+      .service-arrow { color: #9eacba; }
+      a { color: #a9c5e2; }
+      pre { background: rgba(155, 185, 216, .09); }
     }
   </style>
 </head>
