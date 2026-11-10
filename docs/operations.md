@@ -152,6 +152,8 @@ the six-month schedule.
 - Nextcloud 33, ERPNext 16, Traefik 3 and configured MariaDB/Redis series receive
   compatible channel updates. Exact pins need reviewed releases.
   Fluxer uses `rexctl upgrade` with its archive included in BASM backups.
+- Stalwart receives `v1` channel updates. Exact-version images such as RustDesk
+  require a reviewed configuration update.
 - Debian packages and BASM source are not automatically upgraded. Six-month
   application updates do not replace urgent security fixes.
 - Failed application updates leave `config/update-in-progress` and block retries.

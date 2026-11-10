@@ -22,10 +22,10 @@ acquire_operation_lock() {
   mkdir -p "$BASM_ROOT/logs" || fail "Cannot create operation log directory."
   exec 9> "$BASM_ROOT/logs/update.lock"
   if ! flock -w "${2:-0}" 9; then
-    if [[ "${1:-}" == check ]]; then
-      log "Health check deferred while another operation is running."
-      exit 0
-    fi
+    case "${1:-}" in
+      check) log "Health check deferred while another operation is running."; exit 0 ;;
+      examples) log "ERPNext examples deferred while another operation is running."; exit 0 ;;
+    esac
     fail "Another BASM operation is already running."
   fi
   BASM_LOCK_ROOT="$BASM_ROOT"
@@ -74,6 +74,22 @@ backup_cron_file() {
 
 check_cron_file() {
   printf '%s-check' "$(update_cron_file "$1")"
+}
+
+examples_cron_file() {
+  printf '%s-examples' "$(update_cron_file "$1")"
+}
+
+seed_erp_examples() {
+  case "${ERP_EXAMPLES:-no}" in
+    no) log "ERPNext learning examples are disabled."; return 0 ;;
+    yes) ;;
+    *) fail "ERP_EXAMPLES must be yes or no." ;;
+  esac
+  [[ ! -e "$BASM_ROOT/config/update-in-progress" ]] ||
+    fail "Resolve the interrupted ERPNext update before creating learning examples."
+  basm_stack exec -T erpnext-backend ./env/bin/python - "$ERP_URL" \
+    < "$ROOT_DIR/templates/erpnext-examples.py"
 }
 
 install_runtime() {
@@ -149,6 +165,18 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 15 * * * * root /bin/bash "$maintenance_dir/bin/basm" --root "$BASM_ROOT" check >> "$BASM_ROOT/logs/check.log" 2>&1
 EOF
   chmod 644 "$cron_file" "$(backup_cron_file "$BASM_ROOT")" "$(check_cron_file "$BASM_ROOT")" || return 1
+  cron_file="$(examples_cron_file "$BASM_ROOT")"
+  case "${ERP_EXAMPLES:-no}" in
+    yes)
+      cat > "$cron_file" <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * root /bin/bash "$maintenance_dir/bin/basm" --root "$BASM_ROOT" examples >> "$BASM_ROOT/logs/erpnext-examples.log" 2>&1
+EOF
+      chmod 644 "$cron_file" || return 1 ;;
+    no) rm -f "$cron_file" || return 1 ;;
+    *) fail "ERP_EXAMPLES must be yes or no." ;;
+  esac
   rm -f "$(fluxer_backup_cron_file "$BASM_ROOT")" "$maintenance_dir/run-fluxer-backup.sh" || return 1
   systemctl enable --now cron || fail "Cannot enable the maintenance scheduler."
   log "Automatic application updates scheduled for January 1 and July 1 at 03:00 (server time)."

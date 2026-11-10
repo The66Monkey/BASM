@@ -71,6 +71,70 @@ Press Enter to keep the displayed default; `Etc/UTC` uses UTC all year.
 
 Run `timedatectl list-timezones` in another terminal to browse available names.
 
+### ERPNext learning examples
+
+The modules step offers **Include ERPNext learning examples? (yes/no)**, default
+**no**. This is separate from selecting BASM services. The choice is saved as
+`ERP_EXAMPLES` and retained on reruns and module upgrades; old installations
+without this setting remain opted out.
+
+If selected, complete ERPNext's browser-based first-run wizard normally. BASM
+waits for the company, currency and accounts to exist, then creates the pack
+within five minutes when no other maintenance operation holds the lock.
+In ERPNext, search for **Note** and open **BASM Example: Start Here** for links.
+The notes are readable by signed-in Desk users, not published to the website.
+Normal document permissions still apply to the linked records.
+
+| Area | Examples |
+| --- | --- |
+| CRM | Fictional lead and customer opportunity |
+| Selling | Customer, quotation and sales order |
+| Accounts | Generic sales invoice and purchase invoice |
+| Buying | Supplier, supplier quotation and purchase order |
+| Stock | Items, warehouse and purchase material request |
+| Projects | Project, task, activity type and one-hour non-billable timesheet log |
+| Manufacturing | Finished item and draft bill of materials |
+| Assets | Example office location and asset-setup walkthrough |
+| Maintenance | Technician and draft maintenance visit with work-done log |
+| Quality Management | Quality goal and procedure |
+| Support | Fictional support issue |
+
+Every installed ERPNext module also receives a walkthrough note. Workflows
+requiring submitted prerequisites (such as work orders and subcontracting orders)
+or real configuration (such as taxes, asset accounting, portals, telephony and
+external integrations) are **walkthrough-only**, not fabricated transactions.
+This is a starter pack, not a demonstration of every DocType or an extra app
+such as HRMS. It does not enable modules or create users.
+
+All examples are fictional and labelled **BASM Example** directly or through
+their linked example customer/item/project. Submittable records remain **Draft**:
+no invoice posting, payment, stock movement, depreciation or outbound email is
+performed. Reference records, projects, tasks and notes are saved examples,
+since ERPNext does not give them a Draft/Submit lifecycle. Prices are illustrative
+in the company's own currency; no tax rates or company settings are changed.
+Use Print Preview for the generic invoice; this pack does not replace print formats.
+
+Duplicate and adapt examples for real work; **never submit, send or pay the
+examples themselves**. ERPNext's normal Delete action can remove them, starting
+with dependent drafts before linked masters. The pack is created once per site
+in one database transaction. Validation failures roll back the pack and surface
+as maintenance failures; existing records are never overwritten. Deleted or
+edited examples are not recreated or reset by reruns or updates.
+
+To check or create an opted-in pack immediately after setup:
+
+```sh
+sudo basm examples
+```
+
+For local mode use `sudo basm --root /opt/basm-local examples`. Inspect
+`<BASM_ROOT>/logs/erpnext-examples.log` for scheduled attempts and
+`sudo basm status` for maintenance failures. An interrupted application update
+blocks seeding until resolved. A company with unusual mandatory fields or
+workflows may need manual examples instead; validation is never bypassed.
+Choose `no` on an installer rerun to stop automatic attempts; this does not
+delete already-created records.
+
 ### Choosing a backup destination
 
 The wizard offers a numbered list: the default directory, writable mounted disk

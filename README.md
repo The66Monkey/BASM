@@ -97,6 +97,11 @@ Hourly checks detect missing services, stale backups and low disk space.
 An optional HTTPS webhook can notify IT of failures; see
 [operations](docs/operations.md#checks-and-failure-notifications).
 
+New to ERPNext? The installer can optionally add clearly labelled learning
+examples: draft invoices and orders, a project/task, a timesheet and more, plus
+walkthrough notes for each installed ERPNext module. Nothing is submitted.
+See [ERPNext learning examples](docs/installation.md#erpnext-learning-examples).
+
 ## What survives upgrades?
 
 Credentials, service settings, ports, update schedules, and module selections are

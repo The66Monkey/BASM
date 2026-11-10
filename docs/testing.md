@@ -14,6 +14,9 @@ Tests cover:
   rejection, discarded-answer isolation, private summaries and terminal clearing.
   Promotion cancellation at the final review leaves the local stack running.
 - Data-only configuration parsing and invalid settings.
+- Optional ERPNext examples: opt-in persistence, deferred scheduling, maintenance
+  locks, failure propagation, draft payloads, module notes and one-time creation.
+  Isolated Python tests use a Frappe test double, not real ERPNext controllers.
 - Complete encrypted snapshots and verified staged restores with real Restic.
 - Writable block/virtiofs/NFS/CIFS mount discovery and system-disk warnings.
 - Verified external mount adoption, preserved snapshots/identity, wrong passwords,
@@ -32,6 +35,14 @@ Debian host with non-sensitive data, validate:
 - Fresh installation and adoption from the previous release, all selected modules.
 - Real ERPNext migrations, Nextcloud upgrades, Stalwart mail delivery and
   Fluxer calls.
+- ERPNext learning examples on v16: opt in, verify no examples before browser
+  setup, finish setup, then run `sudo basm examples`. Open the Start Here note
+  as the business user; follow its links and print-preview the invoice.
+  Confirm submittable examples all have `docstatus = 0`, and GL Entry, Stock
+  Ledger Entry, Payment Entry and Email Queue counts are unchanged by seeding.
+  Check one-hour/non-billable timesheet totals. Run again, edit/delete an example
+  and rerun: verify no duplicates or recreation. Also verify opt-out and a
+  controller validation failure (no partial pack or completion marker).
 - Nightly stop/backup/restart timing, external webhook delivery and six-month scheduling.
 - Full replacement-host recovery with saved accounts, files, databases and RustDesk keys.
 - Reboot behavior, missing backup mounts, TLS/DNS and public/private reachability.

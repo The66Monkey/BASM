@@ -14,7 +14,7 @@ mkdir -p "$OUTPUT_DIR"
 port_in_use() { return 1; }
 dpkg-query() { printf 'install ok installed'; }
 apt-get() { printf 'Unexpected package installation in KeePass tests.\n' >&2; return 1; }
-run_wizard < <(printf 'local\n\n\n\n\n\n\n7\n\nA\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n7\n\n\nA\n')
 [[ "$BASM_MODULES" == 'basm keepass' ]]
 mkdir -p "$BASM_ROOT/config/prepared-modules/wireguard"
 printf 'server-test-key' > "$BASM_ROOT/config/prepared-modules/wireguard/config.conf"

@@ -19,6 +19,7 @@ Usage: sudo basm [--root /opt/basm-local] COMMAND
   recovery-kit EXTERNAL_DIRECTORY
   update [--release TRUSTED_CHECKOUT]
   alert-test
+  examples (create opted-in ERPNext learning examples after first-run setup)
 EOF
     exit 0 ;;
   update)
@@ -31,7 +32,7 @@ case "$ACTION" in
   restore) [[ $# == 2 ]] || fail "restore requires a snapshot ID and new staging directory." ;;
   recovery-kit) [[ $# == 1 ]] || fail "recovery-kit requires an external directory." ;;
   logs) [[ $# -le 1 ]] || fail "logs accepts at most one service or module/service." ;;
-  status|check|start|stop|backup|snapshots|verify-backup|prune|backup-adopt-mount|alert-test)
+  status|check|start|stop|backup|snapshots|verify-backup|prune|backup-adopt-mount|alert-test|examples)
     [[ $# == 0 ]] || fail "$ACTION takes no arguments." ;;
   *) fail "Unknown command: $ACTION" ;;
 esac
@@ -42,6 +43,7 @@ case "$ACTION" in
     while IFS= read -r file; do stack_command "$file" ps --all; done < <(deployment_stacks)
     [[ ! -f "$BASM_ROOT/logs/last-failure" ]] || cat "$BASM_ROOT/logs/last-failure" ;;
   check) check_deployment ;;
+  examples) seed_erp_examples ;;
   logs)
     if [[ $# == 1 && -f "$BASM_ROOT/modules/${1%%/*}/docker-compose.yml" ]]; then
       file="$BASM_ROOT/modules/${1%%/*}/docker-compose.yml"

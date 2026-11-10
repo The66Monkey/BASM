@@ -564,6 +564,7 @@ review_wizard() {
     "$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$MAILBOX_HOSTNAME" "$CLOUD_URL"
   printf 'Web bind address: %s\nManagement bind address: %s\n' "$BIND_ADDRESS" "$MANAGEMENT_BIND_ADDRESS"
   printf 'Public IP type: %s\nBackup destination: %s\nModules: %s\n\n' "$IP_MODE" "$BACKUP_LOCATION" "$BASM_MODULES"
+  printf 'ERPNext learning examples: %s (never submitted automatically)\n' "${ERP_EXAMPLES:-no}"
   warn_backup_filesystem "$BACKUP_LOCATION"
   port_summary
   if [[ "$DEPLOYMENT_MODE" == local ]]; then
@@ -782,6 +783,7 @@ FLUXER_PROXY_PORT=$FLUXER_PROXY_PORT
 FLUXER_VOICE_TCP_PORT=$FLUXER_VOICE_TCP_PORT
 FLUXER_VOICE_UDP_PORT=$FLUXER_VOICE_UDP_PORT
 ERP_URL="$ERP_URL"
+ERP_EXAMPLES="${ERP_EXAMPLES:-no}"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
 MAILBOX_HOSTNAME="$MAILBOX_HOSTNAME"
@@ -816,7 +818,7 @@ run_wizard() {
   local -a settings=(
     LOCAL_MODE LOCAL_BIND_ADDRESS BASM_ROOT BASM_ENV_FILE DEPLOYMENT_MODE BIND_ADDRESS
     MANAGEMENT_BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE COMPANY_NAME PRIMARY_DOMAIN
-    ADMIN_EMAIL TIMEZONE NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL MAIL_URL CLOUD_URL
+    ADMIN_EMAIL TIMEZONE NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL ERP_EXAMPLES MAIL_URL CLOUD_URL
     IP_MODE DESEC_TOKEN BASM_MODULES HTTP_PORT HTTPS_PORT SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT
     MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT
     MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
@@ -924,6 +926,14 @@ collect_wizard_settings() {
 
   wizard_section "4/5 - Modules"
   select_modules
+  printf '\nOptional ERPNext learning examples: labelled sample records and module walkthroughs.\n'
+  printf 'Created after ERPNext first-run setup; transactions stay in Draft. No postings or payments.\n'
+  local examples
+  examples="$(prompt_value "Include ERPNext learning examples? (yes/no)" "${ERP_EXAMPLES:-no}" '[[ "${1,,}" == yes || "${1,,}" == no || "${1,,}" == y || "${1,,}" == n ]]')" || return
+  case "${examples,,}" in
+    yes|y) ERP_EXAMPLES=yes ;;
+    no|n) ERP_EXAMPLES=no ;;
+  esac
   if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
   fi
@@ -1291,7 +1301,7 @@ start_deployment() {
 purge_deployment() {
   local root="$1" compose_file
   [[ -n "$root" && "$root" != / ]] || fail "Refusing to purge an empty or root path."
-  rm -f "$(update_cron_file "$root")" "$(backup_cron_file "$root")" "$(check_cron_file "$root")" "$(ddns_cron_file "$root")" "$(fluxer_backup_cron_file "$root")"
+  rm -f "$(update_cron_file "$root")" "$(backup_cron_file "$root")" "$(check_cron_file "$root")" "$(examples_cron_file "$root")" "$(ddns_cron_file "$root")" "$(fluxer_backup_cron_file "$root")"
   run_module_action_for_root "$root" fluxer uninstall || fail "Could not remove Fluxer at $root; deployment data was kept."
   if command -v docker >/dev/null 2>&1; then
     while IFS= read -r compose_file; do
@@ -1603,6 +1613,11 @@ Business accounts and operations (ERPNext)
 Address: $scheme://$ERP_URL:$web_port
 Username: Administrator
 Initial password: $ERP_ADMIN_PASSWORD
+
+Learning examples selected: ${ERP_EXAMPLES:-no}
+If selected, finish ERPNext's first-run wizard, then wait up to five minutes.
+In ERPNext, search for Note and open "BASM Example: Start Here".
+Examples are fictional; never submit or send them.
 
 Files and sharing (Nextcloud)
 Address: $scheme://$CLOUD_URL:$web_port

@@ -13,6 +13,8 @@ bash tests/routes.sh
 bash tests/backup-destination.sh
 bash tests/backup-storage.sh
 bash tests/wizard.sh
+bash tests/erpnext-examples.sh
+python3 tests/erpnext-examples.py
 bash tests/local-mode.sh
 bash tests/lifecycle.sh
 bash tests/keepass.sh

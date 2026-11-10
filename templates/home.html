@@ -3,36 +3,184 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f5">
   <title>{{COMPANY}} - BASM</title>
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.6; }
-    body { max-width: 62rem; margin: auto; padding: 2rem 1rem; }
-    h1, h2 { line-height: 1.2; }
-    nav ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; padding: 0; list-style: none; }
-    nav a { display: block; padding: 1rem; border: 1px solid #888; border-radius: .5rem; }
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+      color: #17231e;
+      background: #f5f7f5;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --surface: rgba(255, 255, 255, .86);
+      --border: #dce5df;
+      --muted: #53645b;
+      --accent: #087f5b;
+      --soft-accent: #e4f4ec;
+      --shadow: 0 16px 40px rgba(27, 55, 42, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: clamp(1rem, 4vw, 3.5rem);
+      background:
+        radial-gradient(ellipse at 12% 0%, rgba(108, 197, 151, .17), transparent 34rem),
+        radial-gradient(ellipse at 96% 18%, rgba(155, 201, 178, .18), transparent 30rem),
+        #f5f7f5;
+    }
+    .page { width: min(100%, 70rem); margin: 0 auto; }
+    .hero {
+      display: flex;
+      align-items: center;
+      gap: clamp(1.25rem, 4vw, 3rem);
+      padding: clamp(1.5rem, 5vw, 4rem);
+      border: 1px solid rgba(220, 229, 223, .85);
+      border-radius: 2rem;
+      background: linear-gradient(130deg, rgba(255, 255, 255, .95), rgba(235, 246, 239, .86));
+      box-shadow: var(--shadow);
+    }
+    .mascot {
+      flex: 0 0 auto;
+      width: clamp(4.5rem, 12vw, 7rem);
+      height: clamp(4.5rem, 12vw, 7rem);
+      object-fit: cover;
+      border: 5px solid white;
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 24px rgba(27, 55, 42, .12);
+    }
+    .eyebrow {
+      margin: 0 0 .45rem;
+      color: var(--accent);
+      font-size: .75rem;
+      font-weight: 750;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: .5rem; font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.08; letter-spacing: -.045em; }
+    .hero p:last-child { max-width: 42rem; margin-bottom: 0; color: var(--muted); font-size: 1.08rem; }
+    main { padding: clamp(2rem, 5vw, 3.5rem) 0 1rem; }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; }
+    h2 { margin-bottom: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -.025em; }
+    .section-heading p { margin-bottom: .15rem; color: var(--muted); font-size: .92rem; }
+    nav ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .9rem; margin: 0; padding: 0; list-style: none; }
+    .service-card {
+      display: flex;
+      min-height: 6rem;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.15rem;
+      border: 1px solid var(--border);
+      border-radius: 1.15rem;
+      background: var(--surface);
+      color: inherit;
+      text-decoration: none;
+      box-shadow: 0 5px 16px rgba(27, 55, 42, .035);
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .service-card:hover, .service-card:focus-visible {
+      transform: translateY(-2px);
+      border-color: #9acbb3;
+      box-shadow: 0 12px 26px rgba(27, 55, 42, .1);
+    }
+    .service-card:focus-visible { outline: 3px solid #35a879; outline-offset: 3px; }
+    .service-mark {
+      display: grid;
+      width: 2.85rem;
+      height: 2.85rem;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: .9rem;
+      background: var(--soft-accent);
+      color: #087f5b;
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -.04em;
+    }
+    .mark-nextcloud { background: #e8f0ff; color: #3168c9; }
+    .mark-stalwart { background: #eee9ff; color: #6747bd; }
+    .mark-fluxer { background: #f3eaff; color: #7a39c2; }
+    .service-name { font-weight: 680; }
+    .service-arrow { margin-left: auto; color: #718179; font-size: 1.25rem; }
+    .note, footer {
+      margin-top: 1.35rem;
+      padding: 1.15rem 1.3rem;
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: .94rem;
+    }
+    .note p:last-child, footer p:last-child { margin-bottom: 0; }
+    a { color: #087f5b; }
+    .documentation { margin: 1.3rem .1rem; }
     footer { margin-top: 2rem; }
+    pre {
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      padding: .85rem 1rem;
+      border-radius: .75rem;
+      background: rgba(8, 127, 91, .07);
+      color: inherit;
+      font-size: .9rem;
+    }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 38rem) {
+      .hero { align-items: flex-start; border-radius: 1.4rem; }
+      .section-heading { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { color: #e5eee8; background: #111a16; --surface: rgba(27, 39, 32, .92); --border: #34463a; --muted: #b0beb5; --accent: #68d3a2; --soft-accent: #203d30; --shadow: 0 18px 44px rgba(0, 0, 0, .2); }
+      body { background: radial-gradient(ellipse at 12% 0%, rgba(33, 107, 72, .28), transparent 34rem), #111a16; }
+      .hero { border-color: var(--border); background: linear-gradient(130deg, #1d2c23, #18271f); }
+      .mascot { border-color: #263a2d; }
+      .service-card:hover, .service-card:focus-visible { border-color: #4a9f76; }
+      .service-mark { color: #83e0b1; }
+      .mark-nextcloud { background: #203658; color: #9ebcff; }
+      .mark-stalwart { background: #362d53; color: #c1a8ff; }
+      .mark-fluxer { background: #38264d; color: #d4a9ff; }
+      .service-arrow { color: #9aaca0; }
+      a { color: #79dcad; }
+      pre { background: rgba(104, 211, 162, .09); }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <img src="/mascot.png" alt="BASM mascot" width="200" height="200">
-    <h1>Welcome to your BASM</h1>
-    <p>Your business workspace for <strong>{{COMPANY}}</strong>.</p>
-  </header>
-  <main>
-    <nav aria-label="BASM services">
-      <h2>Open your services</h2>
-      <ul>
+  <div class="page">
+    <header class="hero">
+      <img class="mascot" src="/mascot.png" alt="BASM mascot" width="112" height="112">
+      <div>
+        <p class="eyebrow">BASM · Business platform</p>
+        <h1>Welcome to your BASM</h1>
+        <p>Your business workspace for <strong>{{COMPANY}}</strong>. Your essential tools, together in one place.</p>
+      </div>
+    </header>
+    <main>
+      <nav aria-label="BASM services">
+        <div class="section-heading">
+          <h2>Explore your workspace</h2>
+          <p>Choose a service to get started</p>
+        </div>
+        <ul>
 {{SERVICES}}
-      </ul>
-    </nav>
-    <p>Each service has its own sign-in. Ask your administrator for access.</p>
-    <p>Documentation: <a href="https://github.com/The66Monkey/BASM">BASM on GitHub</a>.</p>
-  </main>
-  <footer>
-    <p>No passwords, tokens or private management addresses are shown here. Connect over SSH and read the private user handover:</p>
-    <pre><code>sudo less /opt/basm/handover/for-the-user.txt</code></pre>
-    <p>For a local install, use <code>/opt/basm-local/handover/for-the-user.txt</code> instead. Press <kbd>q</kbd> to exit. Keep this information private.</p>
-  </footer>
+        </ul>
+      </nav>
+      <section class="note" aria-label="Sign-in information">
+        <p>Each service has its own sign-in. Ask your administrator for access.</p>
+      </section>
+      <p class="documentation">Project documentation: <a href="https://github.com/The66Monkey/BASM">BASM on GitHub</a>.</p>
+    </main>
+    <footer>
+      <p><strong>Need your account details?</strong> Connect over SSH and read the private user handover:</p>
+      <pre><code>sudo less /opt/basm/handover/for-the-user.txt</code></pre>
+      <p>For a local install, use <code>/opt/basm-local/handover/for-the-user.txt</code> instead. Press <kbd>q</kbd> to exit. Keep this information private.</p>
+    </footer>
+  </div>
 </body>
 </html>

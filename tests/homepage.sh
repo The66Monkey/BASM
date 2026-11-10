@@ -47,6 +47,10 @@ assert "Welcome to your BASM" in "".join(parsed.text)
 assert "sudo less /opt/basm/handover/for-the-user.txt" in "".join(parsed.text)
 assert "/opt/basm-local/handover/for-the-user.txt" in "".join(parsed.text)
 assert "Keep this information private" in "".join(parsed.text)
+assert "Stalwart - Email" in "".join(parsed.text)
+assert "Email - Mailboxes" not in "".join(parsed.text)
+assert 'class="service-mark mark-stalwart" aria-hidden="true">S</span>' in page
+assert 'class="service-mark mark-erpnext" aria-hidden="true">E</span>' in page
 assert not parsed.scripts
 assert "must-not-be-published" not in page
 assert "3001" not in page and "8080" not in page
