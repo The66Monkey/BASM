@@ -225,6 +225,7 @@ EOF
   grep -Fq 'mx.acme.example' "$BASM_ROOT/handover/for-it.txt"
   grep -Fq 'those origins can fail with "Unknown client id."' "$BASM_ROOT/handover/for-it.txt"
   grep -Fq 'bind 0.0.0.0:8443, implicit TLS enabled' "$BASM_ROOT/handover/for-it.txt"
+  grep -Fq 'Optional production delivery trace:' "$BASM_ROOT/handover/for-it.txt"
   if grep -Fq 'http://127.0.0.1:18082/admin/' "$BASM_ROOT/handover/for-it.txt"; then exit 1; fi
   grep -Fq 'Keep this operator note.' "$BASM_ROOT/handover/for-it.txt"
   [[ "$(stat -c '%a' "$BASM_ROOT/handover/for-it.txt")" == 600 ]]
@@ -558,6 +559,7 @@ grep -Fq 'Optional mail-client access from outside the LAN/VPN:' "$IT_HANDOVER"
 grep -Fq 'Internet mail delivery requires external' "$IT_HANDOVER"
 grep -Fq 'those origins can fail with "Unknown client id."' "$IT_HANDOVER"
 grep -Fq 'bind 0.0.0.0:8443, implicit TLS enabled' "$IT_HANDOVER"
+grep -Fq 'Optional production delivery trace:' "$IT_HANDOVER"
 if grep -Fq 'http://127.0.0.1:18082/admin/' "$IT_HANDOVER"; then exit 1; fi
 if grep -Fq "$LOCAL_DB_PASSWORD" "$USER_HANDOVER"; then exit 1; fi
 if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summary.txt"; then exit 1; fi

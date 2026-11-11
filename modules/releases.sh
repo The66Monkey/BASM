@@ -164,6 +164,13 @@ name https-proxy, HTTP protocol, bind 0.0.0.0:8443, implicit TLS enabled, and
 override proxy trusted networks set only to 172.31.255.2. BASM Traefik sends
 PROXY protocol v2 over its isolated mail-proxy network.
 
+Optional production delivery trace: in Stalwart, open Management -> Emails ->
+Delivery tests, enter a private external recipient address, and run the test.
+It contacts the recipient server but sends no message. Check the DNS and
+DNSSEC errors in the trace; a successful trace does not prove DNSSEC validation
+for every domain. For DNSSEC errors, check Stalwart's configured DNS resolver
+is reachable, passes DNSSEC records, and supports TCP or TLS.
+
 Test sending and receiving with Thunderbird, then send a test ERPNext email.
 Confirm SPF/DKIM/DMARC and actual delivery before declaring mail operational.
 """

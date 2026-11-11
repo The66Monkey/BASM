@@ -137,6 +137,17 @@ these can remain private when clients connect over the company LAN or VPN.
 
 ## Application email and acceptance
 
+After production mail setup, optionally open **Management > Emails > Delivery
+tests** in Stalwart, enter a private external recipient address, and run a
+delivery trace. The test contacts the recipient server but sends no message.
+Review DNS, DNSSEC, TLS and recipient errors; success does not prove DNSSEC
+validation for every domain or actual message delivery.
+
+For DNSSEC errors, check **Settings > Network > DNS > DNS Resolver** in
+Stalwart. Its configured resolver must be reachable from Stalwart, pass DNSSEC
+records, and support TCP or TLS. Correct the resolver settings, reload them,
+and repeat the trace. Do not disable DNSSEC to bypass the error.
+
 Configure ERPNext's outgoing email account with the dedicated Stalwart sender
 account, server `mx.<domain>`, port 465, SSL/TLS, and authenticated username and
 password. This supports invoice and other ERPNext notifications without an
