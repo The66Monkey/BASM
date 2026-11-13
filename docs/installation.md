@@ -310,18 +310,32 @@ records current; changing addresses can still affect delivery reputation.
 Restic initializes an encrypted local repository and takes daily snapshots of
 application files, configuration, and database dumps.
 
-Optional modules: Fluxer, RustDesk, LAMP, and Uptime Kuma are started automatically when selected
-(each as its own Compose project named `<prefix>-lamp` / `<prefix>-uptime-kuma`).
+Optional modules: Fluxer, RustDesk, LAMP, and Uptime Kuma are started
+automatically when selected (each as its own Compose project named
+`<prefix>-lamp` / `<prefix>-uptime-kuma`).
 LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
 WireGuard generates a server config and a `peer1.conf` client config with fresh
-keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer and
-Fluxer is not available in local mode because it requires production HTTPS and
+keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer is
+not available in local mode because it requires production HTTPS and
 public voice networking. Vaultwarden is deprecated and cannot be selected for
 new installs; use KeePassXC.
 LAMP uses port 18081 in local mode and Uptime Kuma uses 18301 with the local port
 profile, both bound to the selected local address. `uninstall.sh` stops them and
 `update.sh` updates them together with the core stack. The wizard rejects
 conflicting port assignments among the selected services.
+
+### HotDog CMS
+
+Select option `9` or add HotDog CMS to an existing installation:
+
+```bash
+sudo ./install.sh --module hotdog
+```
+
+HotDog automatically selects LAMP. Its static site is served at
+`https://hotdog.<primary-domain>` in production, separately from
+`<BASM_ROOT>/modules/lamp/www`. See the [HotDog CMS guide](hotdog.md) for site
+editing and publish commands. HotDog is included in `--full`.
 
 ## RustDesk Server OSS
 
@@ -475,8 +489,8 @@ bash tests/keepass.sh
 
 A basic install runs BASM Core only (ERPNext, Nextcloud, Stalwart, Traefik, and
 Restic backups). The full profile includes every supported module: Core, LAMP,
-WireGuard, Uptime Kuma, Fluxer, KeePassXC, and RustDesk Server OSS. Vaultwarden
-is deprecated and unavailable for new installs; backup and Traefik are already
+HotDog CMS, WireGuard, Uptime Kuma, Fluxer, KeePassXC, and RustDesk Server OSS.
+Vaultwarden is deprecated and unavailable for new installs; backup and Traefik are already
 included in Core. Full requires production mode because Fluxer needs HTTPS:
 
 ```bash
@@ -517,9 +531,9 @@ The upgrade:
 - Reuses the saved module ports. If they conflict with the current port plan,
   it prompts for new module ports only.
 - Records the new module list in `<BASM_ROOT>/config/basm.env`, starts LAMP,
-  Uptime Kuma, Fluxer, and RustDesk, creates the KeePass database, and refreshes
-  the summary. Fluxer performs interactive administrator setup; WireGuard
-  still requires manual server setup.
+  Uptime Kuma, Fluxer, and RustDesk, installs HotDog CMS, creates the KeePass
+  database, and refreshes the summary. Fluxer performs interactive administrator
+  setup; WireGuard still requires manual server setup.
 
 It is safe to rerun. `sudo ./install.sh --module <name>` adds a single module in
 the same way. To add Fluxer, use `sudo ./install.sh --module fluxer` or select it

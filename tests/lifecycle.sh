@@ -80,6 +80,11 @@ if grep -q '^POSTAL_' "$BASM_ENV_FILE"; then exit 1; fi
   BASM_MODULES=basm
   select_modules <<< '8'
   [[ "$BASM_MODULES" == 'basm rustdesk' ]]
+  BASM_MODULES=basm
+  select_modules <<< '9'
+  [[ "$BASM_MODULES" == 'basm lamp hotdog' ]]
+  ensure_module_dependencies
+  [[ "$BASM_MODULES" == 'basm lamp hotdog' ]]
   DEPLOYMENT_MODE=production
   BIND_ADDRESS=0.0.0.0
   PRIMARY_DOMAIN=acme.example
@@ -157,9 +162,14 @@ if grep -q '^POSTAL_' "$BASM_ENV_FILE"; then exit 1; fi
   grep -Fq '(Fluxer chat: chat.acme.example)' "$DNS_FILE"
   grep -Fq '"subname":"chat","type":"A","ttl":300,"records":["$PUBLIC_IP"]' "$DNS_FILE"
   grep -Fq '"subname":"mx","type":"A","ttl":300,"records":["$PUBLIC_IP"]' "$DNS_FILE"
+  BASM_MODULES='basm lamp hotdog'
+  write_dns_records "$DNS_FILE"
+  grep -Fq '(HotDog CMS website)' "$DNS_FILE"
+  grep -Fq '"subname":"hotdog","type":"A","ttl":300,"records":["$PUBLIC_IP"]' "$DNS_FILE"
   BASM_MODULES=basm
   write_dns_records "$DNS_FILE"
   if grep -Fq 'chat               A      PUBLIC_IP' "$DNS_FILE"; then exit 1; fi
+  if grep -Fq 'HotDog CMS website' "$DNS_FILE"; then exit 1; fi
   IP_MODE=static
   write_dns_records "$DNS_FILE"
   grep -Fq '"subname":"mx","type":"A","ttl":3600,"records":["$PUBLIC_IP"]' "$DNS_FILE"
@@ -602,8 +612,8 @@ if grep -Fq "$ERP_ADMIN_PASSWORD" "$IT_HANDOVER" "$OUTPUT_DIR/installation-summa
   upgrade_to_full
   for module_name in $BASM_FULL_MODULES; do module_selected "$module_name"; done
   [[ "$(sha256sum "$BASM_ROOT/docker-compose.yml")" == "$FULL_CORE_CHECKSUM" ]]
-  [[ "$(wc -l < "$FULL_ACTIONS")" == 6 ]]
-  for module_name in lamp wireguard uptime-kuma fluxer keepass rustdesk; do
+  [[ "$(wc -l < "$FULL_ACTIONS")" == 7 ]]
+  for module_name in lamp wireguard uptime-kuma fluxer keepass rustdesk hotdog; do
     grep -Fxq "$module_name" "$FULL_ACTIONS"
   done
   grep -Fqx "BASM_MODULES=\"$BASM_MODULES\"" "$PROD_ENV"

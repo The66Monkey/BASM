@@ -46,6 +46,9 @@ hostnames=("$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "mx.$PRIMARY_DO
 if [[ " ${BASM_MODULES:-basm} " == *" fluxer "* && -n "${FLUXER_DOMAIN:-}" ]]; then
   hostnames+=("$FLUXER_DOMAIN")
 fi
+if [[ " ${BASM_MODULES:-basm} " == *" hotdog "* ]]; then
+  hostnames+=("hotdog.$PRIMARY_DOMAIN")
+fi
 hostnames="$(printf '%s\n' "${hostnames[@]}" | sort -u | paste -sd, -)"
 note "Public IP changed from ${last_ip:-unknown} to $current_ip; updating $hostnames"
 # The token is passed on stdin so it never appears in the process list.

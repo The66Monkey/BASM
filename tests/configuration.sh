@@ -9,6 +9,7 @@ BASM_ROOT="$TEMP/deployment"
 BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
 mkdir -p "$BASM_ROOT/config"
 BASM_CONTAINER_PREFIX=basm-test
+LAMP_PORT=18081
 DEPLOYMENT_MODE=production
 BIND_ADDRESS=0.0.0.0
 SMTP_BIND_ADDRESS=127.0.0.1
@@ -19,7 +20,7 @@ for variable in DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD NEX
   printf -v "$variable" '%s' test-only-placeholder
   export "$variable"
 done
-for modules in 'basm' 'basm fluxer'; do
+for modules in 'basm' 'basm fluxer' 'basm lamp hotdog'; do
   BASM_MODULES="$modules"
   ensure_port_defaults
   write_env_file
@@ -45,6 +46,8 @@ http = config["http"]
 expected = {"home", "erp", "mail", "cloud", "http-to-https"}
 if "fluxer" in modules.split():
     expected.add("fluxer")
+if "hotdog" in modules.split():
+    expected.add("hotdog")
 assert set(http["routers"]) == expected, (set(http["routers"]), expected)
 for router in http["routers"].values():
     assert router["service"] in http["services"] or router["service"] == "noop@internal"
@@ -97,6 +100,11 @@ assert f"{mailbox_bind}:{submission_port}:465" in services["stalwart-mail"]["por
 assert f"{mailbox_bind}:{imaps_port}:993" in services["stalwart-mail"]["ports"], services["stalwart-mail"]["ports"]
 assert config["http"]["routers"]["home"]["rule"] == "Host(`example.com`)"
 assert config["http"]["services"]["home-service"]["loadBalancer"]["servers"] == [{"url": "http://homepage:80"}]
+if "hotdog" in modules.split():
+    assert config["http"]["routers"]["hotdog"]["rule"] == "Host(`hotdog.example.com`)"
+    assert config["http"]["services"]["hotdog-service"]["loadBalancer"]["servers"] == [
+        {"url": "http://basm-hotdog-lamp:80"}
+    ]
 PY
   if [[ -n "${COMPOSE_BIN:-}" ]]; then
     "$COMPOSE_BIN" --env-file "$BASM_ENV_FILE" -f "$BASM_ROOT/docker-compose.yml" config --format json > "$TEMP/compose.json"

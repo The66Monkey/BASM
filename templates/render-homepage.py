@@ -5,13 +5,15 @@ import re
 import sys
 
 
-def render(template, company, scheme, port, erp, cloud, mail, fluxer):
+def render(template, company, scheme, port, erp, cloud, mail, fluxer, hotdog=""):
     suffix = "" if (scheme, port) in {("https", "443"), ("http", "80")} else f":{port}"
     services = [(erp, "ERPNext - Business", "erpnext", "E"),
                 (cloud, "Nextcloud - Files", "nextcloud", "N"),
                 (mail, "Stalwart - Email", "stalwart", "S")]
     if fluxer:
         services.append((fluxer, "Fluxer - Chat and calls", "fluxer", "F"))
+    if hotdog:
+        services.append((hotdog, "HotDog CMS - Website", "hotdog", "H"))
     links = "\n".join(
         f'        <li><a class="service-card" href="{html.escape(f"{scheme}://{host}{suffix}/", quote=True)}">'
         f'<span class="service-mark mark-{mark}" aria-hidden="true">{symbol}</span>'

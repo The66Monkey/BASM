@@ -25,6 +25,7 @@ UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, map
 if __name__ == "__main__":
     config = yaml.load(sys.stdin, Loader=UniqueLoader)
     domain, port, entrypoint = sys.argv[1:4]
+    hotdog_domain = sys.argv[5] if len(sys.argv) > 5 else ""
     if domain:
         router = {
             "rule": f"Host(`{domain}`)",
@@ -36,6 +37,17 @@ if __name__ == "__main__":
         config["http"]["routers"]["fluxer"] = router
         config["http"]["services"]["fluxer-service"] = {
             "loadBalancer": {"servers": [{"url": f"http://host.docker.internal:{port}"}]}
+        }
+    if hotdog_domain:
+        config["http"]["routers"]["hotdog"] = {
+            "rule": f"Host(`{hotdog_domain}`)",
+            "service": "hotdog-service",
+            "entryPoints": ["websecure" if entrypoint == "websecure" else "web"],
+        }
+        if entrypoint == "websecure":
+            config["http"]["routers"]["hotdog"]["tls"] = {"certResolver": "letsencrypt"}
+        config["http"]["services"]["hotdog-service"] = {
+            "loadBalancer": {"servers": [{"url": "http://basm-hotdog-lamp:80"}]}
         }
     if len(sys.argv) > 4 and Path(sys.argv[4]).exists():
         with open(sys.argv[4]) as source:

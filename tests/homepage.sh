@@ -5,12 +5,13 @@ source "$ROOT_DIR/modules/core.sh"
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 BASM_ROOT="$TEMP/live"
+PRIMARY_DOMAIN=example.com
 COMPANY_NAME='Business <script>alert("bad")</script> & {{SERVICES}}'
 ERP_URL=erp.example.com CLOUD_URL=cloud.example.com MAIL_URL=mail.example.com MAILBOX_HOSTNAME=mx.example.com
 FLUXER_DOMAIN=chat.example.com
 RESTIC_PASSWORD=must-not-be-published
 for mode in production local; do
-  for modules in basm 'basm fluxer'; do
+  for modules in basm 'basm fluxer' 'basm lamp hotdog' 'basm lamp fluxer hotdog'; do
     for port in 443 19443; do
       DEPLOYMENT_MODE="$mode" BASM_MODULES="$modules" HTTPS_PORT="$port" HTTP_PORT=19080 render_homepage
       python3 - "$BASM_ROOT" "$COMPANY_NAME" "$mode" "$modules" "$port" <<'PY'
@@ -40,7 +41,12 @@ class Page(HTMLParser):
 parsed = Page()
 parsed.feed(page)
 scheme, suffix = ("https", "" if port == "443" else ":" + port) if mode == "production" else ("http", ":19080")
-hosts = ["erp", "cloud", "mx"] + (["chat"] if "fluxer" in modules.split() else [])
+selected = modules.split()
+hosts = ["erp", "cloud", "mx"]
+if "fluxer" in selected:
+    hosts.append("chat")
+if "hotdog" in selected:
+    hosts.append("hotdog")
 assert parsed.links == [f"{scheme}://{host}.example.com{suffix}/" for host in hosts] + ["https://github.com/The66Monkey/BASM"]
 assert company in "".join(parsed.text)
 assert "Welcome to your BASM" in "".join(parsed.text)
@@ -51,6 +57,7 @@ assert "Stalwart - Email" in "".join(parsed.text)
 assert "Email - Mailboxes" not in "".join(parsed.text)
 assert 'class="service-mark mark-stalwart" aria-hidden="true">S</span>' in page
 assert 'class="service-mark mark-erpnext" aria-hidden="true">E</span>' in page
+assert ("HotDog CMS - Website" in page) == ("hotdog" in selected)
 assert not parsed.scripts
 assert "must-not-be-published" not in page
 assert "3001" not in page and "8080" not in page

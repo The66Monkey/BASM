@@ -108,9 +108,12 @@ public IPv4 lookup services. The token lives in
 
 ## Modules
 
-The full production profile includes Core, LAMP, Uptime Kuma, WireGuard, Fluxer,
-KeePassXC, and RustDesk Server OSS. Each optional module can also be selected
-individually. LAMP, Uptime Kuma, and RustDesk start automatically when selected.
+The full production profile includes Core, LAMP, HotDog CMS, Uptime Kuma,
+WireGuard, Fluxer, KeePassXC, and RustDesk Server OSS. Each optional module can
+also be selected individually. LAMP, Uptime Kuma, and RustDesk start
+automatically when selected.
+HotDog CMS automatically selects LAMP and serves its published site from a
+separate Apache virtual host.
 Fluxer requires production HTTPS and is managed by `rexctl` behind BASM Traefik, with direct voice
 media ports and BASM-integrated backups. Vaultwarden is deprecated for new
 installs; KeePassXC is the supported credential-manager module. The installer

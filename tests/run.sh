@@ -10,6 +10,7 @@ shellcheck --severity=error -x -P "$ROOT" install.sh update.sh recover.sh uninst
 bash tests/configuration.sh
 bash tests/homepage.sh
 bash tests/routes.sh
+bash tests/hotdog.sh
 bash tests/backup-destination.sh
 bash tests/backup-storage.sh
 bash tests/wizard.sh

@@ -56,7 +56,7 @@ install_login_banner() {
     fail "Could not install the BASM login banner."
 }
 
-BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk"
+BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk hotdog"
 BASM_PREPARED_MODULES="lamp wireguard uptime-kuma rustdesk"
 BASM_REQUIRED_PACKAGES="ca-certificates curl gnupg lsb-release gettext-base tzdata net-tools iproute2 openssl cron util-linux python3 python3-yaml jq restic"
 
@@ -84,6 +84,30 @@ ensure_packages() {
 
 module_selected() {
   [[ " ${BASM_MODULES:-basm} " == *" $1 "* ]]
+}
+
+ensure_module_dependencies() {
+  module_selected hotdog || return 0
+  local module_name inserted_lamp=no hotdog_seen=no
+  local -a modules=() ordered=()
+  read -r -a modules <<< "${BASM_MODULES:-basm}"
+  for module_name in "${modules[@]}"; do
+    if [[ "$module_name" == lamp ]]; then
+      [[ "$hotdog_seen" == no ]] || continue
+      ordered+=(lamp)
+      inserted_lamp=yes
+      continue
+    fi
+    if [[ "$module_name" == hotdog ]]; then
+      if [[ "$inserted_lamp" == no ]]; then
+        ordered+=(lamp)
+        inserted_lamp=yes
+      fi
+      hotdog_seen=yes
+    fi
+    ordered+=("$module_name")
+  done
+  BASM_MODULES="${ordered[*]}"
 }
 
 # Compose gives exported shell variables precedence over --env-file. Run it with
@@ -432,13 +456,14 @@ configure_local_mode() {
 }
 
 render_homepage() {
-  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer=""
+  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer="" hotdog=""
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then scheme=http; port="$HTTP_PORT"; fi
   if module_selected fluxer; then fluxer="$FLUXER_DOMAIN"; fi
+  if module_selected hotdog; then hotdog="hotdog.$PRIMARY_DOMAIN"; fi
   install -d -m 755 "$destination/home" || return
   install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/home/mascot.png" || return
   /usr/bin/python3 "$ROOT_DIR/templates/render-homepage.py" "$ROOT_DIR/templates/home.html" \
-    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" \
+    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" "$hotdog" \
     > "$destination/home/index.html" || return
   chmod 644 "$destination/home/index.html"
 }
@@ -446,6 +471,7 @@ render_homepage() {
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
   local fluxer_entrypoint=websecure fluxer_domain=""
+  local hotdog_domain=""
   local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
   local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${WEB_PROTOCOL} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS} ${MAILBOX_BIND_ADDRESS} ${MAILBOX_SETUP_BIND_ADDRESS} ${MAILBOX_SETUP_PORT} ${MAILBOX_SUBMISSION_PORT} ${MAILBOX_IMAPS_PORT} ${MAILBOX_HOSTNAME}'
   export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME
@@ -469,11 +495,14 @@ render_stack() {
     export FLUXER_DOMAIN FLUXER_PROXY_PORT
     fluxer_domain="$FLUXER_DOMAIN"
   fi
+  if module_selected hotdog; then
+    hotdog_domain="hotdog.$PRIMARY_DOMAIN"
+  fi
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$destination/docker-compose.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
   envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT} ${MAILBOX_HOSTNAME}' \
     < "$proxy_template" |
-    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" \
+    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" "$hotdog_domain" \
       > "$destination/config/traefik.yml" || return
   local TRAEFIK_TRUSTED_IPS='[]'
   if [[ -f "$BASM_ROOT/config/traefik-edge-ip" ]]; then
@@ -574,6 +603,9 @@ review_wizard() {
   fi
   if module_selected fluxer; then
     printf 'Fluxer: https://%s (public chat/calls).\n' "$FLUXER_DOMAIN"
+  fi
+  if module_selected hotdog; then
+    printf 'HotDog website: https://hotdog.%s.\n' "$PRIMARY_DOMAIN"
   fi
   printf '\nAccept to save these settings and begin installation.\n'
   local answer
@@ -678,7 +710,7 @@ select_deployment() {
 print_module_menu() {
   local index=1 module_name label mark
   printf '\nBASM installation menu\n\n'
-  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma keepass rustdesk; do
+  for module_name in basm lamp wireguard fluxer vaultwarden uptime-kuma keepass rustdesk hotdog; do
     case "$module_name" in
       basm) label='BASM Core (required)' ;;
       lamp) label='LAMP' ;;
@@ -688,14 +720,15 @@ print_module_menu() {
       uptime-kuma) label='Uptime Kuma' ;;
       keepass) label='KeePassXC credential manager' ;;
       rustdesk) label='RustDesk Server OSS' ;;
+      hotdog) label='HotDog CMS (requires LAMP)' ;;
     esac
     mark=' '
     if [[ "$module_name" == basm ]] || module_selected "$module_name"; then mark='✓'; fi
     printf '%s) [%s] %s\n' "$index" "$mark" "$label"
     index=$((index + 1))
   done
-  printf '\nSelect modules by number (1-8), separated by spaces, or enter "full" for\n'
-  printf 'All supported modules (including Fluxer, KeePassXC, and RustDesk).\n'
+  printf '\nSelect modules by number (1-9), separated by spaces, or enter "full" for\n'
+  printf 'All supported modules (including Fluxer, KeePassXC, RustDesk, and HotDog CMS).\n'
   printf 'Full requires production mode. Leave blank to keep the checked modules.\n'
   printf 'Example: 2 4 6\n'
 }
@@ -712,6 +745,7 @@ select_modules() {
     [6]="uptime-kuma"
     [7]="keepass"
     [8]="rustdesk"
+    [9]="hotdog"
   )
 
   print_module_menu
@@ -720,16 +754,18 @@ select_modules() {
   if [[ -z "$input" ]]; then
     BASM_MODULES="${BASM_MODULES:-basm}"
     module_selected basm || BASM_MODULES="basm $BASM_MODULES"
+    ensure_module_dependencies
     return
   fi
   if [[ "$input" == full ]]; then
     BASM_MODULES="$BASM_FULL_MODULES"
+    ensure_module_dependencies
     return
   fi
 
   local choice
   for choice in $input; do
-    if [[ "$choice" =~ ^[1-8]$ ]]; then
+    if [[ "$choice" =~ ^[1-9]$ ]]; then
       if [[ "$choice" == 5 ]]; then
         warn "Vaultwarden is deprecated and unavailable for new installs; select KeePassXC instead."
       elif [[ ! " ${selected[*]} " =~ " ${map[$choice]} " ]]; then
@@ -751,6 +787,7 @@ select_modules() {
 
   BASM_MODULES="$(printf '%s ' "${selected[@]}")"
   BASM_MODULES="${BASM_MODULES% }"
+  ensure_module_dependencies
 }
 
 write_env_file() {
@@ -937,6 +974,7 @@ collect_wizard_settings() {
   if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
   fi
+  ensure_module_dependencies
   FLUXER_DOMAIN="${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}"
   wizard_section "5/5 - Ports"
   configure_ports
@@ -968,6 +1006,7 @@ configure_system() {
     local host memory_kib
     local -a service_hosts=("$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME")
     module_selected fluxer && service_hosts+=("$FLUXER_DOMAIN")
+    module_selected hotdog && service_hosts+=("hotdog.$PRIMARY_DOMAIN")
     for host in "${service_hosts[@]}"; do
       if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
         warn "DNS for $host does not resolve yet; public routes and TLS issuance will not be ready."
@@ -1027,6 +1066,9 @@ install_selected_modules() {
   if [[ -z "$selected_modules" ]]; then
     selected_modules="basm"
   fi
+  BASM_MODULES="$selected_modules"
+  ensure_module_dependencies
+  selected_modules="$BASM_MODULES"
 
   log "Installing selected modules: $selected_modules"
 
@@ -1177,8 +1219,21 @@ module_port_variables() {
 # Adds optional modules without recreating the core stack or its credentials.
 # Module-specific prerequisites are installed as needed; cached images are reused.
 upgrade_modules() {
-  local module_name variable protocol
-  local -a added=()
+  local module_name variable protocol saved_modules
+  local -a added=() requested=("$@") ordered=()
+  local hotdog_requested=no
+  for module_name in "${requested[@]}"; do
+    [[ "$module_name" != hotdog ]] || hotdog_requested=yes
+  done
+  if [[ "$hotdog_requested" == yes ]]; then
+    saved_modules="${BASM_MODULES:-basm}"
+    BASM_MODULES="${requested[*]}"
+    ensure_module_dependencies
+    read -r -a ordered <<< "$BASM_MODULES"
+    requested=("${ordered[@]}")
+    BASM_MODULES="$saved_modules"
+    set -- "${requested[@]}"
+  fi
   [[ -f "$BASM_ROOT/docker-compose.yml" ]] || fail "No core BASM stack was found at $BASM_ROOT. Run the full installer first."
   for module_name in "$@"; do
     if [[ "$module_name" == vaultwarden ]] && ! module_selected vaultwarden; then
@@ -1197,6 +1252,7 @@ upgrade_modules() {
     update_deployment "$ROOT_DIR" || fail "Existing deployment update failed; module installation stopped."
   fi
   add_modules_to_selection "$@"
+  ensure_module_dependencies
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
   fi
@@ -1410,6 +1466,13 @@ port_summary() {
           printf 'Fluxer voice media: %s/tcp and %s/udp\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"
         fi
         ;;
+      hotdog)
+        if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+          printf 'HotDog CMS website: http://hotdog.%s:%s\n' "$PRIMARY_DOMAIN" "$HTTP_PORT"
+        else
+          printf 'HotDog CMS website: https://hotdog.%s:%s\n' "$PRIMARY_DOMAIN" "$HTTPS_PORT"
+        fi
+        ;;
     esac
   done
   for module_name in $BASM_PREPARED_MODULES; do
@@ -1437,13 +1500,14 @@ dns_subname() {
 write_dns_records() {
   local file="$1" d="$PRIMARY_DOMAIN"
   local a_ttl=3600
-  local erp_sub cloud_sub mail_sub fluxer_sub
+  local erp_sub cloud_sub mail_sub fluxer_sub hotdog_sub
   local mailbox_host="${MAILBOX_HOSTNAME:-mx.$PRIMARY_DOMAIN}"
   if [[ "${IP_MODE:-non-static}" == non-static ]]; then a_ttl=300; fi
   erp_sub="$(dns_subname "$ERP_URL")"
   cloud_sub="$(dns_subname "$CLOUD_URL")"
   mail_sub="$(dns_subname "$MAIL_URL")"
   fluxer_sub="$(dns_subname "${FLUXER_DOMAIN:-chat.$PRIMARY_DOMAIN}")"
+  hotdog_sub="$(dns_subname "hotdog.$PRIMARY_DOMAIN")"
   cat > "$file" <<EOF
 DNS records for $d
 ====================
@@ -1457,6 +1521,7 @@ Core hostnames (A)
   ${cloud_sub:-@}   A      PUBLIC_IP
   ${mail_sub:-@}    A      PUBLIC_IP   (Mail alias; redirects to $mailbox_host)
 $(if module_selected fluxer; then printf '  %-17s A      PUBLIC_IP   (Fluxer chat: %s)\n' "${fluxer_sub:-@}" "$FLUXER_DOMAIN"; fi)
+$(if module_selected hotdog; then printf '  %-17s A      PUBLIC_IP   (HotDog CMS website)\n' "$hotdog_sub"; fi)
   mx                A      PUBLIC_IP   (mail server: $mailbox_host)
   autoconfig        CNAME  $mailbox_host.
   autodiscover      CNAME  $mailbox_host.
@@ -1501,6 +1566,7 @@ BODY="\$(cat <<DNSJSON
  {"subname":"$cloud_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
  {"subname":"$mail_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
 $(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub" "$a_ttl"; fi)
+$(if module_selected hotdog; then printf ' {"subname":"%s","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$hotdog_sub" "$a_ttl"; fi)
  {"subname":"mx","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
  {"subname":"autoconfig","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
  {"subname":"autodiscover","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
@@ -1778,7 +1844,7 @@ With a localhost binding, use the browser on the server itself.
 For LAN testing, rerun the wizard and select the server's private IPv4 as the
 bind address. On each client, map these names to that address in private DNS
 or its hosts file (Linux: /etc/hosts; Windows: C:\Windows\System32\drivers\etc\hosts):
-  $BIND_ADDRESS $home_host $ERP_URL $MAIL_URL $MAILBOX_HOSTNAME $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)
+  $BIND_ADDRESS $home_host $ERP_URL $MAIL_URL $MAILBOX_HOSTNAME $CLOUD_URL$(if module_selected fluxer; then printf ' %s' "$FLUXER_DOMAIN"; fi)$(if module_selected hotdog; then printf ' hotdog.%s' "$PRIMARY_DOMAIN"; fi)
 Use the selected private IPv4 instead of localhost in that entry.
 HTTP is unencrypted: use test data and a trusted network only.
 SMTP is loopback-only on $SMTP_PORT; public mail and HTTPS are not configured.
@@ -1808,6 +1874,7 @@ command that creates them. The A records point to the public IPv4 for:
   $MAIL_URL
   $CLOUD_URL
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
+$(if module_selected hotdog; then printf '  hotdog.%s\n' "$PRIMARY_DOMAIN"; fi)
   mx.$PRIMARY_DOMAIN
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
@@ -2009,12 +2076,13 @@ HTTP URLs (no public DNS or certificates required):
 - Cloud: http://$CLOUD_URL:$HTTP_PORT
 - ERP: http://$ERP_URL:$HTTP_PORT
 - Email administration: http://$MAILBOX_HOSTNAME:$HTTP_PORT/admin
+$(if module_selected hotdog; then printf '%s\n' "- HotDog website: http://hotdog.$PRIMARY_DOMAIN:$HTTP_PORT"; fi)
 
 Initial login details:
 $(credential_summary)
 
 For LAN clients, map home.$PRIMARY_DOMAIN, $ERP_URL, $MAIL_URL, $MAILBOX_HOSTNAME
-and $CLOUD_URL to $BIND_ADDRESS in each client's hosts file or private DNS.
+and $CLOUD_URL$(if module_selected hotdog; then printf ' and hotdog.%s' "$PRIMARY_DOMAIN"; fi) to $BIND_ADDRESS in each client's hosts file or private DNS.
 Local access uses HTTP on $BIND_ADDRESS:$HTTP_PORT.
 Local mode initializes ERPNext, Nextcloud and Stalwart. SMTP binds only to loopback port $SMTP_PORT; the Stalwart first-run setup listener is also loopback-only on port $MAILBOX_SETUP_PORT. Internet mail delivery requires a production domain and DNS records.
 Restic encrypts daily backups to $BACKUP_LOCATION/restic.
@@ -2046,6 +2114,7 @@ URLs:
 - Email administration: https://$MAILBOX_HOSTNAME:$HTTPS_PORT/admin
 - Mail server: $MAILBOX_HOSTNAME
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT
+$(if module_selected hotdog; then printf '%s\n' "- HotDog website: https://hotdog.$PRIMARY_DOMAIN:$HTTPS_PORT"; fi)
 
 Initial login details:
 $(credential_summary)
@@ -2063,6 +2132,7 @@ DNS Records Required:
 - A record for $MAILBOX_HOSTNAME -> Public IP
 - A record for $CLOUD_URL -> Public IP
 $(if module_selected fluxer; then printf '%s\n' "- A record for $FLUXER_DOMAIN -> Public IP"; fi)
+$(if module_selected hotdog; then printf '%s\n' "- A record for hotdog.$PRIMARY_DOMAIN -> Public IP"; fi)
 - MX, SPF, DKIM, and DMARC records for Stalwart
 
 Router Port Forwarding Required:

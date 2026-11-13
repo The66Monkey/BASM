@@ -15,7 +15,9 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 - Fluxer for self-hosted community chat and voice/video
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional LAMP, WireGuard, Uptime Kuma, RustDesk Server OSS, and KeePassXC credential manager modules. The full profile includes every supported module, including Fluxer; Vaultwarden is deprecated for new installs.
+- Optional LAMP, HotDog CMS, WireGuard, Uptime Kuma, RustDesk Server OSS, and
+  KeePassXC credential manager modules. The full profile includes every
+  supported module, including Fluxer; Vaultwarden is deprecated for new installs.
 
 Everything runs as Docker Compose stacks on a single Debian server.
 A production Debian VM is supported, including encrypted backups to a dedicated
@@ -55,6 +57,11 @@ wizard or run `sudo ./install.sh --module rustdesk` on an existing install.
 See [RustDesk setup](docs/installation.md#rustdesk-server-oss) for client settings,
 ports, and key backups. RustDesk is also included in the production `--full` profile.
 
+To add HotDog CMS, select option `9` or run `sudo ./install.sh --module hotdog`.
+It automatically includes LAMP and publishes the generated static site at
+`https://hotdog.<domain>` without replacing LAMP's existing `www` content.
+See the [HotDog CMS guide](docs/hotdog.md) for editing and publishing.
+
 ## Where is configuration stored?
 
 Outside the repository, under `<BASM_ROOT>/config/` (`/opt/basm` for production,
@@ -86,9 +93,10 @@ Run `sudo basm update` for a manual update. See
 
 ## Day-to-day operation
 
-Open your main BASM domain over HTTPS for a start page linking ERPNext, Nextcloud,
-Stalwart mail and enabled Fluxer. Each service still
-requires its own login. No credentials or private management links are published.
+Open your main BASM domain over HTTPS for a start page linking ERPNext,
+Nextcloud, and Stalwart, with optional links to Fluxer and the HotDog website.
+Each business service still requires its own login. No credentials or private
+management links are published.
 See the [self-hosted mail guide](docs/mail.md) for mailbox setup and Thunderbird.
 
 Use `sudo basm status`, `sudo basm check`, and `sudo basm logs`.
@@ -140,6 +148,8 @@ Start with installation, then use the relevant operations or reference guide:
 13. [Architecture notes](docs/architecture.md) — understand BASM's components,
     configuration and operating model.
 14. [Testing](docs/testing.md) — review remaining live acceptance requirements.
+15. [HotDog CMS](docs/hotdog.md) — edit, check, build, and publish the optional
+    static website.
 
 ## License
 

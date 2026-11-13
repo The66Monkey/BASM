@@ -13,9 +13,9 @@ base = {"http": {"routers": {"home": {"service": "home"}}, "services": {"home": 
 with tempfile.TemporaryDirectory() as directory:
     custom = Path(directory, "custom.yml")
 
-    def render(domain="", entrypoint="websecure"):
+    def render(domain="", entrypoint="websecure", hotdog=""):
         return subprocess.run(
-            [sys.executable, str(renderer), domain, "29461", entrypoint, str(custom)],
+            [sys.executable, str(renderer), domain, "29461", entrypoint, str(custom), hotdog, "18081"],
             input=json.dumps(base), text=True, capture_output=True,
         )
 
@@ -38,16 +38,31 @@ with tempfile.TemporaryDirectory() as directory:
         if domain:
             assert merged["routers"]["fluxer"]["entryPoints"] == [entrypoint]
             assert ("tls" in merged["routers"]["fluxer"]) == (entrypoint == "websecure")
+    for entrypoint in ("websecure", "web"):
+        result = render("fluxer.example.com", entrypoint, "hotdog.example.com")
+        assert result.returncode == 0, result.stderr
+        merged = json.loads(result.stdout)["http"]
+        assert merged["routers"]["hotdog"]["rule"] == "Host(`hotdog.example.com`)"
+        assert merged["routers"]["hotdog"]["entryPoints"] == [entrypoint]
+        assert ("tls" in merged["routers"]["hotdog"]) == (entrypoint == "websecure")
+        assert merged["services"]["hotdog-service"]["loadBalancer"]["servers"] == [
+            {"url": "http://basm-hotdog-lamp:80"}
+        ]
     for invalid in [
         '{"http": {"routers": {"home": {}}}}',
         '{"http": {"services": {"home": {}}}}',
         '{"http": {"routers": {"fluxer": {}}}}',
+        '{"http": {"routers": {"hotdog": {}}}}',
         '{"tcp": {}}', '{"http": null}', '{"http": {"routers": []}}',
         '{"http": {"routers": {"broken": null}}}',
         'http:\n  routers: {}\n  routers: {}\n',
     ]:
         custom.write_text(invalid)
-        result = render("fluxer.example.com")
+        result = render(
+            "fluxer.example.com",
+            "websecure",
+            "hotdog.example.com" if '"hotdog"' in invalid else "",
+        )
         assert result.returncode != 0 and not result.stdout and result.stderr, invalid
 print("Custom route merging, existing routes, TLS and invalid/conflicting configuration passed.")
 PY

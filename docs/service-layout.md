@@ -19,8 +19,10 @@ for production and `/opt/basm-local` for local mode.
 | `<BASM_ROOT>/config/backup-device` | Saved backup filesystem identity; rejects missing or changed mounts |
 | `<BASM_ROOT>/config/backup-device.before-adopt.*` | Previous identities retained by verified mount adoption |
 | `<BASM_ROOT>/config/alert-webhook` | Optional private HTTPS notification endpoint |
-| `<BASM_ROOT>/modules/` | Active optional modules (LAMP, Uptime Kuma, WireGuard, Fluxer) |
+| `<BASM_ROOT>/modules/` | Active optional modules (LAMP, HotDog CMS, Uptime Kuma, WireGuard, Fluxer) |
 | `<BASM_ROOT>/modules/fluxer/` | Fluxer `rexctl` settings and managed Compose project |
+| `<BASM_ROOT>/modules/hotdog/site/` | HotDog CMS source site and publish target configuration |
+| `<BASM_ROOT>/modules/lamp/hotdog/current/` | Published HotDog static site, served separately from LAMP's `www/` |
 | `<BACKUP_LOCATION>/fluxer/` | Upstream Fluxer archives |
 | `<BASM_ROOT>/data/fluxer-recovery.tar.zst` | Latest Fluxer archive copied into the complete snapshot |
 | `<BASM_ROOT>/data/stalwart/` | Stalwart mailboxes and embedded database |
@@ -36,20 +38,23 @@ for production and `/opt/basm-local` for local mode.
 - Optional modules run as separate Compose projects named `<prefix>-lamp`,
   `<prefix>-uptime-kuma`, and `<prefix>-fluxer` (the Fluxer project is managed
   by its upstream `rexctl` CLI).
+- HotDog CMS runs its CLI on the host and publishes static files into the LAMP
+  project; Apache serves them from a separate virtual host.
 - Fluxer serves through BASM Traefik; voice media uses separately published
   TCP/UDP ports.
 - Local mode prefixes container names with `basm-local-` to avoid collisions.
 
 ## Hostnames
 
-| Mode | ERP | Mail and administration | Cloud |
-| --- | --- | --- | --- |
-| Production | `erp.<domain>` | `mx.<domain>` | `cloud.<domain>` |
-| Local (loopback) | `erp.localhost` | `mx.localhost` | `cloud.localhost` |
-| Local (LAN) | `erp.basm.test` | `mx.basm.test` | `cloud.basm.test` |
+| Mode | ERP | Mail and administration | Cloud | HotDog website |
+| --- | --- | --- | --- | --- |
+| Production | `erp.<domain>` | `mx.<domain>` | `cloud.<domain>` | `hotdog.<domain>` |
+| Local (loopback) | `erp.localhost` | `mx.localhost` | `cloud.localhost` | `hotdog.localhost` |
+| Local (LAN) | `erp.basm.test` | `mx.basm.test` | `cloud.basm.test` | `hotdog.basm.test` |
 
 The optional `mail.<domain>` alias redirects to the canonical `mx.<domain>`
 hostname.
+When HotDog CMS is selected, its production hostname is `hotdog.<domain>`.
 
 ## Ports
 

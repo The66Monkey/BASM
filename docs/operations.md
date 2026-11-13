@@ -202,10 +202,11 @@ bind address. BASM does not replace your firewall/router policy.
 | Installer option | Effect |
 | --- | --- |
 | `--module fluxer` | Add Fluxer behind BASM Traefik, including data, backups and updates |
+| `--module hotdog` | Add HotDog CMS and its required LAMP website host |
 | `--full` | Add all supported modules without recreating core data or credentials |
 | `--promote` | Replace a local test deployment with a fresh production installation, retaining organization settings and module selection |
 
-Full includes LAMP, WireGuard, Uptime Kuma, Fluxer, KeePassXC and RustDesk.
+Full includes LAMP, HotDog CMS, WireGuard, Uptime Kuma, Fluxer, KeePassXC and RustDesk.
 Local mode requires individual selection or promotion because Fluxer needs
 production HTTPS. These paths install missing prerequisites but do not upgrade
 installed packages; cached images are reused.
