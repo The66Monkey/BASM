@@ -9,15 +9,33 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 
 ## What gets installed?
 
-- ERPNext for core business operations
-- Stalwart for self-hosted inbound/outbound email, mailboxes, IMAP and SMTP
+**Core (included in every installation):**
+
+- ERPNext for business operations
+- Stalwart for email, mailboxes, IMAP and SMTP
 - Nextcloud for file sync and collaboration
-- Fluxer for self-hosted community chat and voice/video
 - Restic for encrypted backups
 - Traefik for TLS and reverse proxying
-- Optional LAMP, HotDog CMS, WireGuard, Uptime Kuma, RustDesk Server OSS, and
-  KeePassXC credential manager modules. The full profile includes every
-  supported module, including Fluxer; Vaultwarden is deprecated for new installs.
+
+**Optional service modules:**
+
+- LAMP
+- WireGuard
+- Fluxer for community chat and voice/video (requires production HTTPS)
+- Uptime Kuma
+- RustDesk Server OSS
+- KeePassXC credential manager
+- HotDog CMS (requires LAMP)
+
+**Optional ERPNext features:**
+
+- Learning examples that create sample draft records
+- Swedish ROT/RUT invoice details and Skatteverket XML export (requires a
+  published custom ERPNext v16 image)
+
+The `full` profile selects all optional service modules above and therefore
+requires production mode because Fluxer needs HTTPS. ERPNext features remain
+separate wizard choices.
 
 Everything runs as Docker Compose stacks on a single Debian server.
 A production Debian VM is supported, including encrypted backups to a dedicated
