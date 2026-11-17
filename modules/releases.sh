@@ -264,6 +264,7 @@ update_deployment() (
   while IFS= read -r file; do check_stack "$file" || return; done < <(deployment_stacks)
   ROOT_DIR="$release" install_runtime || return
   check_deployment --updating || return
+  ROOT_DIR="$release" install_login_banner || return
   remove_legacy_postal_settings || return
   refresh_dns_handover || return
   refresh_legacy_postal_handover || return

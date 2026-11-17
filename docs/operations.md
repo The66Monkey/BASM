@@ -33,6 +33,9 @@ Do not add secrets to the generated `<BASM_ROOT>/home/` directory.
 | DNS, certificates and forwarding | [Network setup](router-setup.md), [troubleshooting](troubleshooting.md) |
 
 For local-mode commands, put `--root /opt/basm-local` before the command.
+Interactive login shows the Docker service state, available stack status and
+start page. The installer removes the Debian default `/etc/motd` text only
+when the file matches it exactly; customized messages are retained.
 
 ## Custom reverse-proxy routes
 

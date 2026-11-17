@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 case $- in
 *i*)
   server_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
@@ -5,6 +6,9 @@ case $- in
     server_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   fi
   [ -n "$server_ip" ] || server_ip="unavailable"
+
+  docker_service="$(systemctl is-active docker.service 2>/dev/null || true)"
+  [ -n "$docker_service" ] || docker_service="unavailable"
 
   if ! command -v docker >/dev/null 2>&1; then
     stack_status="Docker command not installed"
@@ -15,7 +19,13 @@ case $- in
     stack_status="Status unavailable to this login; check with sudo"
   fi
 
-  printf '\n=== BASM ===\nHost: %s  |  IPv4: %s\nStack: %s\nTip: sudo basm status\n\n' \
-    "$(hostname)" "$server_ip" "$stack_status"
+  printf '\n=== BASM ===\nHost: %s  |  IPv4: %s\nDocker service: %s\nStack: %s\n' \
+    "$(hostname)" "$server_ip" "$docker_service" "$stack_status"
+  if [ -r "${BASM_LOGIN_URL_FILE:-/etc/profile.d/basm-login-url}" ] &&
+    IFS= read -r basm_login_url < "${BASM_LOGIN_URL_FILE:-/etc/profile.d/basm-login-url}" &&
+    [ -n "$basm_login_url" ]; then
+    printf 'Start page: %s\n' "$basm_login_url"
+  fi
+  printf 'Details and URLs: sudo basm status\n\n'
   ;;
 esac

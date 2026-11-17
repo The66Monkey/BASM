@@ -18,12 +18,30 @@ done
 [[ "$(printf 'invalid\nN\n' | prompt_ip_mode)" == non-static ]]
 
 BASM_PROFILE_DIR="$TEST_DIR/profile.d"
+BASM_MOTD_FILE="$TEST_DIR/motd"
+cat > "$BASM_MOTD_FILE" <<'EOF'
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+EOF
+PRIMARY_DOMAIN=example.test HTTPS_PORT=443 DEPLOYMENT_MODE=production
 install_login_banner
 cmp "$ROOT_DIR/templates/profile.d/basm.sh" "$BASM_PROFILE_DIR/basm.sh"
 [[ "$(stat -c '%a' "$BASM_PROFILE_DIR/basm.sh")" == 644 ]]
+[[ ! -s "$BASM_MOTD_FILE" ]]
+[[ "$(cat "$BASM_PROFILE_DIR/basm-login-url")" == 'https://example.test:443' ]]
+printf 'Custom administrator message\n' > "$BASM_MOTD_FILE"
+DEPLOYMENT_MODE=local HTTP_PORT=18080 install_login_banner
+grep -Fxq 'Custom administrator message' "$BASM_MOTD_FILE"
+grep -Fxq 'http://home.example.test:18080' "$BASM_PROFILE_DIR/basm-login-url"
 
 for banner_mode in running empty denied missing; do
-  banner_output="$(BANNER_MODE="$banner_mode" bash --noprofile --norc -ic '
+  banner_output="$(BANNER_MODE="$banner_mode" BASM_LOGIN_URL_FILE="$BASM_PROFILE_DIR/basm-login-url" bash --noprofile --norc -ic '
+    systemctl() { printf "active\n"; }
     docker() {
       case "$BANNER_MODE" in
         running) printf "basm-one\nbasm-two\n" ;;
@@ -39,6 +57,8 @@ for banner_mode in running empty denied missing; do
     }
     source "$1"
   ' bash "$BASM_PROFILE_DIR/basm.sh" 2>/dev/null)"
+  grep -Fq 'Docker service: active' <<< "$banner_output"
+  grep -Fq 'Start page: http://home.example.test:18080' <<< "$banner_output"
   case "$banner_mode" in
     running) grep -Fq 'Stack: 2 running container(s)' <<< "$banner_output" ;;
     empty) grep -Fq 'Stack: 0 running container(s)' <<< "$banner_output" ;;
@@ -47,6 +67,7 @@ for banner_mode in running empty denied missing; do
   esac
 done
 [[ -z "$(bash --noprofile --norc -c 'source "$1"' bash "$BASM_PROFILE_DIR/basm.sh")" ]]
+unset PRIMARY_DOMAIN HTTPS_PORT DEPLOYMENT_MODE HTTP_PORT
 
 previous_password=""
 for attempt in {1..10}; do

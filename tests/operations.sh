@@ -195,6 +195,7 @@ restic_command check --read-data
   check_stack() { :; }
   check_deployment() { [[ "${FAIL_HEALTH:-false}" == false ]]; }
   install_runtime() { :; }
+  install_login_banner() { printf 'banner\n' >> "$CALLS"; }
   FAIL_PULL=true expect_failure update_deployment "$ROOT_DIR"
   FAIL_BACKUP=true expect_failure update_deployment "$ROOT_DIR"
   [[ ! -e "$BASM_ROOT/config/update-in-progress" ]]
@@ -202,6 +203,7 @@ restic_command check --read-data
   : > "$CALLS"
   update_deployment "$ROOT_DIR"
   [[ ! -e "$BASM_ROOT/config/update-in-progress" ]]
+  grep -Fxq banner "$CALLS"
   [[ "$(grep -n '^backup$' "$CALLS" | cut -d: -f1)" -lt "$(grep -n '^start$' "$CALLS" | cut -d: -f1)" ]]
   FAIL_START=true expect_failure update_deployment "$ROOT_DIR"
   [[ -f "$BASM_ROOT/config/update-in-progress" ]]

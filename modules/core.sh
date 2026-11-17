@@ -50,10 +50,34 @@ prepare_stalwart_storage() {
 }
 
 install_login_banner() {
-  local profile_dir="${BASM_PROFILE_DIR:-/etc/profile.d}"
+  local profile_dir="${BASM_PROFILE_DIR:-/etc/profile.d}" motd_file="${BASM_MOTD_FILE:-/etc/motd}"
+  local scheme=https host="${PRIMARY_DOMAIN:-}" port="${HTTPS_PORT:-443}"
+  if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
+    scheme=http
+    host="home.$host"
+    port="${HTTP_PORT:-80}"
+  fi
   install -d -m 755 "$profile_dir" || fail "Could not create the BASM login profile directory."
   install -m 644 "$ROOT_DIR/templates/profile.d/basm.sh" "$profile_dir/basm.sh" ||
     fail "Could not install the BASM login banner."
+  if [[ -n "${PRIMARY_DOMAIN:-}" ]]; then
+    printf '%s://%s:%s\n' "$scheme" "$host" "$port" > "$profile_dir/basm-login-url" ||
+      fail "Could not write the BASM login URL."
+  else
+    printf '%s\n' 'unavailable; see sudo basm status' > "$profile_dir/basm-login-url" ||
+      fail "Could not write the BASM login URL."
+  fi
+  chmod 644 "$profile_dir/basm-login-url" || fail "Could not set BASM login URL permissions."
+  if [[ -f "$motd_file" && ! -L "$motd_file" ]] && cmp -s "$motd_file" <(printf '%s\n' \
+    '' \
+    'The programs included with the Debian GNU/Linux system are free software;' \
+    'the exact distribution terms for each program are described in the' \
+    'individual files in /usr/share/doc/*/copyright.' \
+    '' \
+    'Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent' \
+    'permitted by applicable law.'); then
+    : > "$motd_file" || fail "Could not remove the default Debian MOTD."
+  fi
 }
 
 BASM_FULL_MODULES="basm lamp wireguard uptime-kuma fluxer keepass rustdesk hotdog"
