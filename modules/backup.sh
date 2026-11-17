@@ -63,7 +63,7 @@ adopt_backup_mount() (
 )
 
 record_stack_images() {
-  local file="$1" destination="$2" configuration service image configured_image container digest temporary
+  local file="$1" destination="$2" configuration service image configured_image container digest temporary configured_id actual_id
   configuration="$(stack_command "$file" config --format json)" || return
   temporary="$(mktemp)" || return
   printf '{"services":{}}\n' > "$temporary"
@@ -73,15 +73,27 @@ record_stack_images() {
     if [[ -n "$container" ]]; then
       image="$(docker inspect --format '{{.Image}}' "$container")" || { rm -f "$temporary"; return 1; }
     fi
-    digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" || { rm -f "$temporary"; return 1; }
-    if ! digest="$(jq -er 'if type == "array" then .[0] | select(type == "string" and test("@sha256:[a-f0-9]{64}$")) else empty end' <<< "$digest")"; then
-      if [[ "$configured_image" =~ @sha256:[a-f0-9]{64}$ ]]; then
-        digest="$configured_image"
-        warn "Running image for $service has no registry metadata; retaining its configured digest."
-      else
+    if is_local_erp_image "$configured_image"; then
+      configured_id="$(docker image inspect --format '{{.Id}}' "$configured_image")" ||
+        { rm -f "$temporary"; return 1; }
+      actual_id="$(docker image inspect --format '{{.Id}}' "$image")" ||
+        { rm -f "$temporary"; return 1; }
+      if [[ "$configured_id" != "$actual_id" ]]; then
         rm -f "$temporary"
-        warn "No registry digest available for $service; cannot guarantee recovery versions."
-        return 1
+        fail "Running image for $service does not match its local ROT/RUT image tag."
+      fi
+      digest="$configured_image"
+    else
+      digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" || { rm -f "$temporary"; return 1; }
+      if ! digest="$(jq -er 'if type == "array" then .[0] | select(type == "string" and test("@sha256:[a-f0-9]{64}$")) else empty end' <<< "$digest")"; then
+        if [[ "$configured_image" =~ @sha256:[a-f0-9]{64}$ ]]; then
+          digest="$configured_image"
+          warn "Running image for $service has no registry metadata; retaining its configured digest."
+        else
+          rm -f "$temporary"
+          warn "No registry digest available for $service; cannot guarantee recovery versions."
+          return 1
+        fi
       fi
     fi
     configuration="$(jq --arg service "$service" --arg image "$digest" \

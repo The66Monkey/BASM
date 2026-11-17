@@ -77,8 +77,13 @@ installed_versions() {
 resolve_release_images() {
   local configuration="$1" destination="$2" service image digest result='{"services":{}}'
   while IFS=$'\t' read -r service image; do
-    digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" || return
-    digest="$(jq -er '.[0] | select(test("@sha256:[a-f0-9]{64}$"))' <<< "$digest")" || return
+    if is_local_erp_image "$image"; then
+      docker image inspect "$image" >/dev/null || return
+      digest="$image"
+    else
+      digest="$(docker image inspect --format '{{json .RepoDigests}}' "$image")" || return
+      digest="$(jq -er '.[0] | select(test("@sha256:[a-f0-9]{64}$"))' <<< "$digest")" || return
+    fi
     result="$(jq --arg service "$service" --arg image "$digest" \
       '.services[$service]={image:$image}' <<< "$result")" || return
   done < <(jq -r '.services | to_entries[] | [.key,.value.image] | @tsv' <<< "$configuration")
@@ -219,13 +224,15 @@ update_deployment() (
     [[ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | head -1)" == "$current" ]] ||
       fail "BASM release downgrades are not supported."
   fi
+  validate_erp_configuration || return
   stage="$(mktemp -d)"
   trap 'rm -rf "$stage"' EXIT
   mkdir -p "$stage/config"
   previous="$(installed_versions)" || return
+  prepare_erp_rot_rut_image "$release" refresh || return
   ROOT_DIR="$release" BASM_RENDER_DIR="$stage" render_stack || return
   candidate="$(basm_compose -f "$stage/docker-compose.yml" --env-file "$BASM_ENV_FILE" config --format json)" || return
-  basm_compose -f "$stage/docker-compose.yml" --env-file "$BASM_ENV_FILE" pull --quiet || return
+  pull_deployment_images "$stage/docker-compose.yml" "$BASM_ENV_FILE" || return
   validate_update_versions "$previous" "$candidate" "$release" || return
   resolve_release_images "$candidate" "$stage/images.json" || return
   while IFS= read -r file; do
@@ -265,6 +272,9 @@ update_deployment() (
   ROOT_DIR="$release" install_runtime || return
   check_deployment --updating || return
   ROOT_DIR="$release" install_login_banner || return
+  if [[ "${ERP_ROT_RUT:-no}" == yes ]]; then
+    write_erp_image_settings || return
+  fi
   remove_legacy_postal_settings || return
   refresh_dns_handover || return
   refresh_legacy_postal_handover || return

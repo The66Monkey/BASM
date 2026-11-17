@@ -10,7 +10,8 @@ read_deployment_settings() {
   done < <(jq -j 'to_entries[] | .key, "\u0000", .value, "\u0000"' <<< "$settings")
   ERP_ROT_RUT="${ERP_ROT_RUT:-no}"
   ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}"
-  export ERP_ROT_RUT ERP_IMAGE
+  ERP_BASE_IMAGE="${ERP_BASE_IMAGE:-}"
+  export ERP_ROT_RUT ERP_IMAGE ERP_BASE_IMAGE
 }
 
 basm_stack() {
@@ -104,6 +105,11 @@ install_runtime() {
   done
   if [[ "$ROOT_DIR" != "$destination" ]]; then
     cp -a "$ROOT_DIR/templates/." "$destination/templates/" || return
+    if [[ "${ERP_ROT_RUT:-no}" == yes && -d "$ROOT_DIR/erpnext-apps/basm_rot_rut" ]]; then
+      install -d -m 700 "$destination/erpnext-apps" || return
+      rm -rf "$destination/erpnext-apps/basm_rot_rut" || return
+      cp -a "$ROOT_DIR/erpnext-apps/basm_rot_rut" "$destination/erpnext-apps/" || return
+    fi
     install -m 700 "$ROOT_DIR/bin/basm" "$destination/bin/basm" || return
     for item in update.sh recover.sh; do
       install -m 700 "$ROOT_DIR/$item" "$destination/$item" || return

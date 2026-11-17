@@ -5,29 +5,18 @@ It records ROT/RUT invoice details, prints a Swedish invoice layout, and exports
 submitted claims as Skatteverket v1.1 XML. It is not installed unless the
 operator enables it.
 
-## Build and publish the ERPNext image
-
-Run these commands from the BASM checkout. Choose a registry and image name
-that the BASM Docker host can pull:
-
-```sh
-docker build \
-  --build-arg BASE_IMAGE=frappe/erpnext:v16 \
-  -t registry.example.com/company/basm-erpnext:v16-rot-rut \
-  erpnext-apps/basm_rot_rut
-docker push registry.example.com/company/basm-erpnext:v16-rot-rut
-```
+## Enable the app
 
 In the BASM setup wizard, answer **yes** to **Include Swedish ROT/RUT
-workflow?** and enter the published image reference. BASM requires a custom
-image reference tagged `v16` or `v16-*`; the stock ERPNext image is rejected
-when the app is enabled. BASM uses this image for all ERPNext services and
-installs the app on the site through its site initialization step.
+workflow?** BASM pulls the official ERPNext v16 base image and builds the app
+image on the host. The generated image is used by all ERPNext services, and
+site initialization installs the app. No registry account, manual build, or
+image publishing is required.
 
-The app's Dockerfile starts from the official ERPNext v16 image, installs the
-app without additional dependencies, and builds its Desk assets. Rebuild and
-publish the image when updating the app source. Keep BASM's normal image update
-and recovery workflow in use.
+BASM rebuilds the image during updates when the app source or ERPNext base
+changes. Its source and pinned base-image digest are included in backups so
+recovery can rebuild the same image. The first build needs internet access and
+additional Docker storage for the ERPNext build.
 
 ## Create and print a claim
 
@@ -75,5 +64,5 @@ python -m unittest discover -s tests -v
 
 The XML generator has focused ROT/RUT unit tests, and a generated example was
 validated against the published v1.1 schema. App installation, DocType
-permissions, print rendering, and the custom image still require acceptance
+permissions, print rendering, and the image build still require acceptance
 testing on a disposable ERPNext v16 site before production use.

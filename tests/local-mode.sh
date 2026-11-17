@@ -175,6 +175,7 @@ for address in 127.0.0.1 192.168.1.50; do
   grep -Fq 'image: frappe/erpnext:v16' "$BASM_ROOT/docker-compose.yml"
   grep -Fqx 'ERP_ROT_RUT="no"' "$BASM_ENV_FILE"
   grep -Fqx 'ERP_IMAGE="frappe/erpnext:v16"' "$BASM_ENV_FILE"
+  grep -Fqx 'ERP_BASE_IMAGE=""' "$BASM_ENV_FILE"
   grep -Fq 'NEXTCLOUD_ADMIN_PASSWORD:' "$BASM_ROOT/docker-compose.yml"
   grep -Fq '"127.0.0.1:2525:25"' "$BASM_ROOT/docker-compose.yml"
   if grep -Fq 'postal-' "$BASM_ROOT/docker-compose.yml"; then exit 1; fi
@@ -221,13 +222,15 @@ done
   BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
   mkdir -p "$BASM_ROOT/config"
   ERP_ROT_RUT=yes
-  ERP_IMAGE=ghcr.io/example/basm-erpnext:v16-rot-rut
+  ERP_IMAGE=basm-erpnext:v16-rot-rut-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  ERP_BASE_IMAGE=frappe/erpnext@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   validate_erp_configuration
   render_stack
   [[ "$(grep -Fc "image: $ERP_IMAGE" "$BASM_ROOT/docker-compose.yml")" == 7 ]]
   grep -Fq "ERP_ROT_RUT: \${ERP_ROT_RUT}" "$BASM_ROOT/docker-compose.yml"
   ERP_ROT_RUT=yes
-  ERP_IMAGE=frappe/erpnext:v16
+  ERP_IMAGE=basm-erpnext:v16-rot-rut-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  ERP_BASE_IMAGE=""
   if (validate_erp_configuration); then exit 1; fi
   export ERP_ROT_RUT=invalid
   if (validate_erp_configuration); then exit 1; fi

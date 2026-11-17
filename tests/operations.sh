@@ -186,7 +186,7 @@ restic_command check --read-data
     printf 'compose %s\n' "$*" >> "$CALLS"
     case "$*" in
       *'config --format json') printf '{"services":{"app":{"image":"example/app:1"}}}\n' ;;
-      *'pull --quiet') [[ "${FAIL_PULL:-false}" == false ]] ;;
+      *'pull --quiet'*) [[ "${FAIL_PULL:-false}" == false ]] ;;
     esac
   }
   backup_deployment() { printf 'backup\n' >> "$CALLS"; [[ "$FAIL_BACKUP" == false ]]; }
@@ -197,7 +197,9 @@ restic_command check --read-data
   install_runtime() { :; }
   install_login_banner() { printf 'banner\n' >> "$CALLS"; }
   FAIL_PULL=true expect_failure update_deployment "$ROOT_DIR"
+  FAIL_PULL=false
   FAIL_BACKUP=true expect_failure update_deployment "$ROOT_DIR"
+  FAIL_BACKUP=false
   [[ ! -e "$BASM_ROOT/config/update-in-progress" ]]
   grep -Fxq 'original compose' "$BASM_ROOT/docker-compose.yml"
   : > "$CALLS"

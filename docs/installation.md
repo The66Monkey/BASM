@@ -138,9 +138,9 @@ delete already-created records.
 ### Swedish ROT/RUT in ERPNext
 
 The modules step also offers **Include Swedish ROT/RUT workflow?**, default
-**no**. Enabling it requires a published custom ERPNext v16 image containing
-the optional `basm_rot_rut` app. BASM Core includes the app source but does not
-build or publish the image; see the [ERPNext ROT/RUT guide](./erpnext-rot-rut.md).
+**no**. When enabled, BASM builds the ERPNext v16 image containing its
+`basm_rot_rut` app locally during installation and updates. No custom registry
+or manual image publishing is required. See the [ERPNext ROT/RUT guide](./erpnext-rot-rut.md).
 
 The app adds manually entered ROT/RUT invoice details and a Swedish print
 format. These fields do not change ERPNext totals, VAT or ledger entries.

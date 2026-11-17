@@ -269,17 +269,104 @@ validate_erp_image() {
     "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*:v16([.-][A-Za-z0-9._-]+)?$ ]]
 }
 
+is_local_erp_image() {
+  [[ "$1" =~ ^basm-erpnext:v16-rot-rut-[a-f0-9]{64}$ ]]
+}
+
 validate_erp_configuration() {
   case "${ERP_ROT_RUT:-no}" in
-    no) [[ "${ERP_IMAGE:-frappe/erpnext:v16}" == frappe/erpnext:v16 ]] ||
+    no) [[ "${ERP_IMAGE:-frappe/erpnext:v16}" == frappe/erpnext:v16 &&
+        -z "${ERP_BASE_IMAGE:-}" ]] ||
         fail "Set ERP_IMAGE to frappe/erpnext:v16 when the ROT/RUT add-on is disabled." ;;
     yes)
-      validate_erp_image "${ERP_IMAGE:-}" ||
-        fail "ERP_ROT_RUT=yes requires a published custom ERPNext v16 image containing basm_rot_rut."
-      [[ "${ERP_IMAGE:-}" != frappe/erpnext:v16 ]] ||
-        fail "The default ERPNext image does not contain the ROT/RUT add-on." ;;
+      if is_local_erp_image "${ERP_IMAGE:-}"; then
+        [[ "${ERP_BASE_IMAGE:-}" =~ ^frappe/erpnext@sha256:[a-f0-9]{64}$ ]] ||
+          fail "The locally built ROT/RUT image needs its pinned ERPNext base digest."
+      elif [[ "${ERP_IMAGE:-}" != frappe/erpnext:v16 ]] && validate_erp_image "${ERP_IMAGE:-}"; then
+        :
+      elif [[ "${ERP_IMAGE:-frappe/erpnext:v16}" == frappe/erpnext:v16 &&
+        -z "${ERP_BASE_IMAGE:-}" ]]; then
+        :
+      else
+        fail "ERP_ROT_RUT=yes needs BASM's local image or a valid legacy custom ERPNext v16 image."
+      fi ;;
     *) fail "ERP_ROT_RUT must be yes or no." ;;
   esac
+}
+
+prepare_erp_rot_rut_image() {
+  local source_root="${1:-$ROOT_DIR}" mode="${2:-refresh}"
+  local source_dir="$source_root/erpnext-apps/basm_rot_rut"
+  local base_image source_hash image_key image
+  [[ "${ERP_ROT_RUT:-no}" == yes ]] || return 0
+  if [[ "$mode" == restore ]] && ! is_local_erp_image "${ERP_IMAGE:-}"; then
+    return 0
+  fi
+  [[ -f "$source_dir/Dockerfile" ]] ||
+    fail "ROT/RUT app source is missing from $source_dir."
+
+  if [[ "$mode" == restore ]]; then
+    base_image="${ERP_BASE_IMAGE:-}"
+    [[ "$base_image" =~ ^frappe/erpnext@sha256:[a-f0-9]{64}$ ]] ||
+      fail "The saved ROT/RUT image does not have a valid pinned ERPNext base image."
+  else
+    docker pull frappe/erpnext:v16 || fail "Could not pull the ERPNext v16 base image for ROT/RUT."
+    base_image="$(docker image inspect --format '{{json .RepoDigests}}' frappe/erpnext:v16 |
+      jq -er '.[] | select(test("^frappe/erpnext@sha256:[a-f0-9]{64}$"))')" ||
+      fail "Could not identify the immutable ERPNext v16 base-image digest."
+  fi
+
+  source_hash="$(find "$source_dir" -type f -print0 | sort -z | xargs -0 sha256sum |
+    sha256sum | cut -d' ' -f1)" || return
+  image_key="$(printf '%s\n%s\n' "$base_image" "$source_hash" | sha256sum | cut -d' ' -f1)" || return
+  image="basm-erpnext:v16-rot-rut-$image_key"
+  if [[ "$mode" == restore && "${ERP_IMAGE:-}" != "$image" ]]; then
+    fail "The saved ROT/RUT image reference does not match its app source and base image."
+  fi
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    log "Building the optional ROT/RUT ERPNext image locally."
+    docker build --pull --build-arg "BASE_IMAGE=$base_image" --tag "$image" "$source_dir" ||
+      fail "Could not build the local ROT/RUT ERPNext image."
+  fi
+  ERP_IMAGE="$image"
+  ERP_BASE_IMAGE="$base_image"
+  export ERP_IMAGE ERP_BASE_IMAGE
+}
+
+write_erp_image_settings() {
+  local temporary
+  [[ -f "$BASM_ENV_FILE" && ! -L "$BASM_ENV_FILE" ]] ||
+    fail "Cannot update ERPNext image settings in the deployment configuration."
+  temporary="$(mktemp "${BASM_ENV_FILE}.XXXXXX")" || return
+  if ! awk -v image="$ERP_IMAGE" -v base="$ERP_BASE_IMAGE" '
+    /^ERP_IMAGE=/ { print "ERP_IMAGE=\"" image "\""; image_found=1; next }
+    /^ERP_BASE_IMAGE=/ { print "ERP_BASE_IMAGE=\"" base "\""; base_found=1; next }
+    { print }
+    END {
+      if (!image_found) print "ERP_IMAGE=\"" image "\""
+      if (!base_found) print "ERP_BASE_IMAGE=\"" base "\""
+    }
+  ' "$BASM_ENV_FILE" > "$temporary"; then
+    rm -f "$temporary"
+    return 1
+  fi
+  chmod 600 "$temporary" || { rm -f "$temporary"; return 1; }
+  chown --reference="$BASM_ENV_FILE" "$temporary" || { rm -f "$temporary"; return 1; }
+  mv -f "$temporary" "$BASM_ENV_FILE"
+}
+
+pull_deployment_images() {
+  local compose_file="$1" env_file="$2" configuration service image
+  local -a services=() lock=()
+  [[ -z "${3:-}" ]] || lock=(-f "$3")
+  configuration="$(basm_compose -f "$compose_file" "${lock[@]}" --env-file "$env_file" config --format json)" || return
+  while IFS=$'\t' read -r service image; do
+    is_local_erp_image "$image" || services+=("$service")
+  done < <(jq -r '.services | to_entries[] |
+    select((.value.profiles // [] | length) == 0) |
+    [.key,.value.image] | @tsv' <<< "$configuration")
+  ((${#services[@]} == 0)) && return 0
+  basm_compose -f "$compose_file" "${lock[@]}" --env-file "$env_file" pull --quiet "${services[@]}"
 }
 
 ensure_port_defaults() {
@@ -638,7 +725,7 @@ review_wizard() {
   printf 'Public IP type: %s\nBackup destination: %s\nModules: %s\n\n' "$IP_MODE" "$BACKUP_LOCATION" "$BASM_MODULES"
   printf 'ERPNext learning examples: %s (never submitted automatically)\n' "${ERP_EXAMPLES:-no}"
   printf 'Swedish ROT/RUT workflow: %s\n' "${ERP_ROT_RUT:-no}"
-  if [[ "${ERP_ROT_RUT:-no}" == yes ]]; then printf 'ERPNext image: %s\n' "$ERP_IMAGE"; fi
+  if [[ "${ERP_ROT_RUT:-no}" == yes ]]; then printf 'ROT/RUT app image: built locally by BASM\n'; fi
   warn_backup_filesystem "$BACKUP_LOCATION"
   port_summary
   if [[ "$DEPLOYMENT_MODE" == local ]]; then
@@ -868,6 +955,7 @@ ERP_URL="$ERP_URL"
 ERP_EXAMPLES="${ERP_EXAMPLES:-no}"
 ERP_ROT_RUT="${ERP_ROT_RUT:-no}"
 ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}"
+ERP_BASE_IMAGE="${ERP_BASE_IMAGE:-}"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
 MAILBOX_HOSTNAME="$MAILBOX_HOSTNAME"
@@ -902,7 +990,7 @@ run_wizard() {
   local -a settings=(
     LOCAL_MODE LOCAL_BIND_ADDRESS BASM_ROOT BASM_ENV_FILE DEPLOYMENT_MODE BIND_ADDRESS
     MANAGEMENT_BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE COMPANY_NAME PRIMARY_DOMAIN
-    ADMIN_EMAIL TIMEZONE         NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL ERP_EXAMPLES ERP_ROT_RUT ERP_IMAGE MAIL_URL CLOUD_URL
+    ADMIN_EMAIL TIMEZONE         NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL ERP_EXAMPLES ERP_ROT_RUT ERP_IMAGE ERP_BASE_IMAGE MAIL_URL CLOUD_URL
     IP_MODE DESEC_TOKEN BASM_MODULES HTTP_PORT HTTPS_PORT SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT
     MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT
     MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
@@ -935,7 +1023,7 @@ run_wizard() {
 
   write_env_file
   read_deployment_settings
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL ERP_ROT_RUT ERP_IMAGE MAIL_URL CLOUD_URL MAILBOX_HOSTNAME BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT RESTIC_PASSWORD
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL ERP_ROT_RUT ERP_IMAGE ERP_BASE_IMAGE MAIL_URL CLOUD_URL MAILBOX_HOSTNAME BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT RESTIC_PASSWORD
 }
 
 collect_wizard_settings() {
@@ -1019,16 +1107,17 @@ collect_wizard_settings() {
     no|n) ERP_EXAMPLES=no ;;
   esac
   printf '\nOptional ERPNext app for Swedish ROT/RUT invoice details and XML export.\n'
-  printf 'It requires a published custom ERPNext v16 image containing basm_rot_rut.\n'
+  printf 'When enabled, BASM builds the app image locally from its included source.\n'
   local rot_rut
   rot_rut="$(prompt_value "Include Swedish ROT/RUT workflow? (yes/no)" "${ERP_ROT_RUT:-no}" '[[ "${1,,}" == yes || "${1,,}" == no || "${1,,}" == y || "${1,,}" == n ]]')" || return
   case "${rot_rut,,}" in
     yes|y)
       ERP_ROT_RUT=yes
-      ERP_IMAGE="$(prompt_value "Custom ERPNext v16 image containing basm_rot_rut" "${ERP_IMAGE:-}" 'validate_erp_image "$1"')" || return ;;
+      ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}" ;;
     no|n)
       ERP_ROT_RUT=no
-      ERP_IMAGE=frappe/erpnext:v16 ;;
+      ERP_IMAGE=frappe/erpnext:v16
+      ERP_BASE_IMAGE="" ;;
   esac
   validate_erp_configuration
   if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
@@ -1102,6 +1191,10 @@ configure_system() {
   else
     cp "$ROOT_DIR/templates/erpnext-create-site.sh" "$BASM_ROOT/config/erpnext-create-site.sh"
     chmod 755 "$BASM_ROOT/config/erpnext-create-site.sh"
+    if [[ "${ERP_ROT_RUT:-no}" == yes ]]; then
+      prepare_erp_rot_rut_image "$ROOT_DIR" refresh
+      write_erp_image_settings || fail "Could not save the local ROT/RUT image settings."
+    fi
   fi
   render_stack || fail "Cannot render the BASM stack."
   prepare_full_profile

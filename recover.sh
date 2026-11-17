@@ -31,6 +31,7 @@ mv "$restored" "$BASM_ROOT"
 acquire_operation_lock
 BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
 load_deployment_env
+validate_erp_configuration
 # A replacement host may use a different backup filesystem.
 rm -f "$BASM_ROOT/config/backup-device"
 initialize_repository
@@ -38,7 +39,8 @@ ROOT_DIR="$BASM_ROOT/maintenance"
 source "$ROOT_DIR/modules/core.sh"
 install_operation_trap "Recovery"
 install_runtime
-basm_stack pull --quiet
+prepare_erp_rot_rut_image "$ROOT_DIR" restore
+pull_deployment_images "$BASM_ROOT/docker-compose.yml" "$BASM_ENV_FILE" "$BASM_ROOT/config/images.json"
 basm_stack up -d --wait --wait-timeout 900 --remove-orphans
 while IFS= read -r file; do
   [[ "${file%/*}" != "$BASM_ROOT/modules/fluxer" ]] || continue

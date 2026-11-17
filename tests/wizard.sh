@@ -77,6 +77,17 @@ grep -Fq 'Could not read setup confirmation' "$TEMP/eof.log"
 ) >"$TEMP/examples.log" 2>&1
 grep -Fq 'Invalid value for Include ERPNext learning examples?' "$TEMP/examples.log"
 
+(
+  LOCAL_BASM_ROOT="$TEMP/rot-rut"
+  PRODUCTION_BASM_ROOT="$TEMP/rot-rut-production"
+  OUTPUT_DIR="$TEMP/rot-rut-output"
+  run_wizard < <(printf '%s\n' local '' '' '' '' '' '' '' '' yes '' A)
+  [[ "$ERP_ROT_RUT" == yes ]]
+  [[ "$ERP_IMAGE" == frappe/erpnext:v16 && -z "$ERP_BASE_IMAGE" ]]
+  grep -Fxq 'ERP_ROT_RUT="yes"' "$BASM_ENV_FILE"
+  ! grep -Fq 'Custom ERPNext v16 image' "$TEMP/rot-rut-wizard.log"
+) >"$TEMP/rot-rut-wizard.log" 2>&1
+
 python3 - "$ROOT_DIR" "$LOCAL_BASM_ROOT/config/basm.env" <<'PY'
 import errno
 import os

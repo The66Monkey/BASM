@@ -14,6 +14,7 @@ bash tests/hotdog.sh
 bash tests/backup-destination.sh
 bash tests/backup-storage.sh
 bash tests/wizard.sh
+bash tests/rot-rut-image.sh
 bash tests/erpnext-examples.sh
 python3 tests/erpnext-examples.py
 bash tests/local-mode.sh

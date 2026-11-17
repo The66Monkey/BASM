@@ -30,8 +30,8 @@ BASM (Business, Accounting, Storage, Mail) is an opinionated deployment framewor
 **Optional ERPNext features:**
 
 - Learning examples that create sample draft records
-- Swedish ROT/RUT invoice details and Skatteverket XML export (requires a
-  published custom ERPNext v16 image)
+- Swedish ROT/RUT invoice details and Skatteverket XML export (BASM builds its
+  optional ERPNext v16 app image locally)
 
 The `full` profile selects all optional service modules above and therefore
 requires production mode because Fluxer needs HTTPS. ERPNext features remain

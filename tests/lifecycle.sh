@@ -283,11 +283,13 @@ EOF
   BASM_ROOT="$TEST_DIR/fluxer-maintenance"
   BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
   BASM_MODULES='basm fluxer'
+  ERP_ROT_RUT=yes
   BACKUP_LOCATION="$BASM_ROOT/backups"
   BASM_CRON_DIR="$TEST_DIR/fluxer-cron"
   LOG_FILE="$TEST_DIR/fluxer-maintenance.log"
   install_auto_updates
   [[ -s "$BASM_ROOT/maintenance/modules/fluxer.sh" ]]
+  [[ -s "$BASM_ROOT/maintenance/erpnext-apps/basm_rot_rut/Dockerfile" ]]
   [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/modules/fluxer.sh")" == 600 ]]
   [[ "$(stat -c '%a' "$BASM_ROOT/maintenance/bin/basm")" == 700 ]]
   bash -n "$BASM_ROOT/maintenance/bin/basm"
@@ -302,7 +304,7 @@ BASM_CRON_DIR="$TEST_DIR/cron.d"
 mkdir -p "$OUTPUT_DIR"
 
 # Basic local install: blank module selection keeps core only.
-run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\n\ncustom\n19080\n19443\n12525\n12465\n12993\n18082\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
+run_wizard < <(printf 'local\n\nAcme Ltd\nops@acme.dk\n\n\n\n\n\n\ncustom\n19080\n19443\n12525\n12465\n12993\n18082\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
 [[ "$BASM_MODULES" == basm ]]
 configure_system
 install_selected_modules
@@ -480,7 +482,7 @@ rm -rf "$PRODUCTION_BASM_ROOT"
     printf 'acme.example\npromote\n'
     printf '\n\n\n\n\n'
     printf '\n\n\n\n'
-    printf '\n\n\nC\n'
+    printf '\n\n\n\n\nC\n'
   )
 ) > "$TEST_DIR/cancel-review.log"
 [[ ! -s "$DOCKER_LOG" && -f "$LOCAL_BASM_ROOT/config/basm.env" && ! -e "$PRODUCTION_BASM_ROOT" ]]
@@ -496,7 +498,7 @@ docker() {
     printf 'acme.example\npromote\n'
     printf '\n\n\n\n\n'
     printf '\n\n\n\n'
-    printf '\n\n\nA\n'
+    printf '\n\n\n\nA\n'
   )
 ) 2>/dev/null && exit 1
 [[ -f "$LOCAL_BASM_ROOT/config/basm.env" && -d "$LOCAL_BASM_ROOT/data" && ! -e "$PRODUCTION_BASM_ROOT" ]]
@@ -514,7 +516,7 @@ promote_to_production < <(
   printf 'bad domain\nacme.example\npromote\n'
   printf '\n\n\n\n%s\n' "$TEST_DIR/prod-backups"
   printf '\n\n\n\n'
-  printf '\n\n\nA\n'
+  printf '\n\n\n\nA\n'
 )
 [[ ! -e "$LOCAL_BASM_ROOT" && ! -e "$OUTPUT_DIR/local-installation-summary.txt" ]]
 [[ ! -e "$LOCAL_CRON_FILE" ]]
