@@ -19,4 +19,13 @@ else
   bench --site "$ERP_URL" migrate
 fi
 
+case "${ERP_ROT_RUT:-no}" in
+  yes)
+    if ! bench --site "$ERP_URL" list-apps | grep -Fxq basm_rot_rut; then
+      bench --site "$ERP_URL" install-app basm_rot_rut
+    fi ;;
+  no) ;;
+  *) printf 'ERP_ROT_RUT must be yes or no.\n' >&2; exit 1 ;;
+esac
+
 bench --site "$ERP_URL" enable-scheduler

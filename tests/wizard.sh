@@ -19,8 +19,8 @@ findmnt() {
 (
   run_wizard < <(
     printf 'first.example\nDiscarded Company\nops@first.dk\n\n\n%s\n\n\n\nN\n' "$TEMP/discarded-backups"
-    printf 'synthetic-desec-token-123456\n2 4\nyes\nstandard\nR\n'
-    printf 'local\n\nAccepted Company\n\n\n\n\n\n\n\n\ninvalid\nA\n'
+    printf 'synthetic-desec-token-123456\n2 4\nyes\nno\nstandard\nR\n'
+    printf 'local\n\nAccepted Company\n\n\n\n\n\n\n\n\nno\ninvalid\nA\n'
   )
   [[ "$DEPLOYMENT_MODE" == local && "$BIND_ADDRESS" == 127.0.0.1 ]]
   [[ "$MANAGEMENT_BIND_ADDRESS" == 127.0.0.1 && "$SMTP_BIND_ADDRESS" == 127.0.0.1 ]]
@@ -44,7 +44,7 @@ fi
 
 cp "$LOCAL_BASM_ROOT/config/basm.env" "$TEMP/original.env"
 (
-  run_wizard < <(printf 'local\n\nCancelled Company\n\n\n\n\n\n\n\nC\n')
+  run_wizard < <(printf 'local\n\nCancelled Company\n\n\n\n\n\n\n\n\nC\n')
   printf 'UNEXPECTED-CONTINUATION\n'
 ) >"$TEMP/cancel.log" 2>&1
 cmp "$TEMP/original.env" "$LOCAL_BASM_ROOT/config/basm.env"
@@ -52,7 +52,7 @@ cmp "$TEMP/original.env" "$LOCAL_BASM_ROOT/config/basm.env"
 grep -Fq 'Installation cancelled' "$TEMP/cancel.log"
 
 if (
-  run_wizard < <(printf 'local\n\nUnconfirmed Company\n\n\n\n\n\n\n\n')
+  run_wizard < <(printf 'local\n\nUnconfirmed Company\n\n\n\n\n\n\n\n\n')
 ) >"$TEMP/eof.log" 2>&1; then
   fail "Wizard accepted end-of-input as confirmation."
 fi
@@ -61,7 +61,7 @@ grep -Fq 'Could not read setup confirmation' "$TEMP/eof.log"
 
 # Existing credentials must stay private in the pre-install review.
 (
-  collect_wizard_settings < <(printf 'local\n\n\n\n\n\n\n\n\n\n')
+  collect_wizard_settings < <(printf 'local\n\n\n\n\n\n\n\n\n\n\n')
   DB_ROOT_PASSWORD=synthetic-private-password
   DESEC_TOKEN=synthetic-private-token
   review_wizard <<< A
@@ -69,10 +69,10 @@ grep -Fq 'Could not read setup confirmation' "$TEMP/eof.log"
 ! grep -Fq synthetic-private "$TEMP/private.log"
 
 (
-  run_wizard < <(printf '%s\n' local '' '' '' '' '' '' '' invalid Y '' A)
+  run_wizard < <(printf '%s\n' local '' '' '' '' '' '' '' invalid Y '' '' A)
   [[ "$ERP_EXAMPLES" == yes ]]
   grep -Fxq 'ERP_EXAMPLES="yes"' "$LOCAL_BASM_ROOT/config/basm.env"
-  run_wizard < <(printf '%s\n' local '' '' '' '' '' '' '' '' '' A)
+  run_wizard < <(printf '%s\n' local '' '' '' '' '' '' '' '' '' '' A)
   [[ "$ERP_EXAMPLES" == yes ]]
 ) >"$TEMP/examples.log" 2>&1
 grep -Fq 'Invalid value for Include ERPNext learning examples?' "$TEMP/examples.log"

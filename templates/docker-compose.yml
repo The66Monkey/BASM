@@ -99,7 +99,7 @@ services:
 
   erp-configurator:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erp-configurator
     restart: "no"
     entrypoint: ["bash", "-c"]
@@ -122,7 +122,7 @@ services:
 
   erpnext-create-site:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-create-site
     restart: "no"
     entrypoint: ["bash", "/etc/basm/create-site.sh"]
@@ -130,6 +130,7 @@ services:
       ERP_URL: ${ERP_URL}
       ERP_ADMIN_PASSWORD: ${ERP_ADMIN_PASSWORD}
       DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      ERP_ROT_RUT: ${ERP_ROT_RUT}
     volumes:
       - ${BASM_ROOT}/data/erpnext:/home/frappe/frappe-bench/sites
       - ${BASM_ROOT}/data/erpnext-logs:/home/frappe/frappe-bench/logs
@@ -148,7 +149,7 @@ services:
 
   erpnext-backend:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-backend
     restart: unless-stopped
     environment:
@@ -169,7 +170,7 @@ services:
 
   erpnext-frontend:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-frontend
     restart: unless-stopped
     command: ["nginx-entrypoint.sh"]
@@ -195,7 +196,7 @@ services:
 
   erpnext-websocket:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-websocket
     restart: unless-stopped
     command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
@@ -213,7 +214,7 @@ services:
 
   erpnext-scheduler:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-scheduler
     restart: unless-stopped
     command: ["bench", "schedule"]
@@ -228,7 +229,7 @@ services:
 
   erpnext-worker:
     <<: *service
-    image: frappe/erpnext:v16
+    image: ${ERP_IMAGE}
     container_name: ${BASM_CONTAINER_PREFIX}-erpnext-worker
     restart: unless-stopped
     command: ["bench", "worker", "--queue", "short,default,long"]

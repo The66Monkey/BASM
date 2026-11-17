@@ -8,6 +8,9 @@ read_deployment_settings() {
     printf -v "$key" '%s' "$value"
     export "$key"
   done < <(jq -j 'to_entries[] | .key, "\u0000", .value, "\u0000"' <<< "$settings")
+  ERP_ROT_RUT="${ERP_ROT_RUT:-no}"
+  ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}"
+  export ERP_ROT_RUT ERP_IMAGE
 }
 
 basm_stack() {

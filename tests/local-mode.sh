@@ -159,9 +159,9 @@ port_in_use() { return 1; }
 for address in 127.0.0.1 192.168.1.50; do
   previous_nextcloud_password="${NEXTCLOUD_ADMIN_PASSWORD:-}"
   if [[ "$address" == 127.0.0.1 ]]; then
-    run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\n\nA\n')
+    run_wizard < <(printf 'local\n\n\n\n\n\n\n2 6\n\n\n\nA\n')
   else
-    run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\n\nA\n' "$address")
+    run_wizard < <(printf 'local\n%s\n\n\n\n\n\n2 6\n\n\n\nA\n' "$address")
   fi
   for variable in DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD RESTIC_PASSWORD; do
     [[ "${!variable}" =~ ^[A-Za-z0-9]{32}$ ]]
@@ -173,6 +173,8 @@ for address in 127.0.0.1 192.168.1.50; do
   render_stack
   [[ "$(stat -c '%a' "$BASM_ENV_FILE")" == 600 ]]
   grep -Fq 'image: frappe/erpnext:v16' "$BASM_ROOT/docker-compose.yml"
+  grep -Fqx 'ERP_ROT_RUT="no"' "$BASM_ENV_FILE"
+  grep -Fqx 'ERP_IMAGE="frappe/erpnext:v16"' "$BASM_ENV_FILE"
   grep -Fq 'NEXTCLOUD_ADMIN_PASSWORD:' "$BASM_ROOT/docker-compose.yml"
   grep -Fq '"127.0.0.1:2525:25"' "$BASM_ROOT/docker-compose.yml"
   if grep -Fq 'postal-' "$BASM_ROOT/docker-compose.yml"; then exit 1; fi
@@ -214,6 +216,23 @@ for address in 127.0.0.1 192.168.1.50; do
   grep -Fq "http://$ERP_URL:18080" "$OUTPUT_DIR/local-installation-summary.txt"
 done
 
+(
+  BASM_ROOT="$TEST_DIR/erp-image-test"
+  BASM_ENV_FILE="$BASM_ROOT/config/basm.env"
+  mkdir -p "$BASM_ROOT/config"
+  ERP_ROT_RUT=yes
+  ERP_IMAGE=ghcr.io/example/basm-erpnext:v16-rot-rut
+  validate_erp_configuration
+  render_stack
+  [[ "$(grep -Fc "image: $ERP_IMAGE" "$BASM_ROOT/docker-compose.yml")" == 7 ]]
+  grep -Fq "ERP_ROT_RUT: \${ERP_ROT_RUT}" "$BASM_ROOT/docker-compose.yml"
+  ERP_ROT_RUT=yes
+  ERP_IMAGE=frappe/erpnext:v16
+  if (validate_erp_configuration); then exit 1; fi
+  export ERP_ROT_RUT=invalid
+  if (validate_erp_configuration); then exit 1; fi
+)
+
 unset BIND_ADDRESS BASM_CONTAINER_PREFIX
 DEPLOYMENT_MODE=production
 set_port_defaults standard
@@ -247,7 +266,7 @@ select_deployment < <(printf 'not-a-domain\nbusiness.example\n')
 [[ "$BASM_ROOT" == "$PRODUCTION_BASM_ROOT" ]]
 [[ "$COMPANY_NAME" == 'Production sentinel' ]]
 
-run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\n\ncustom\n19080\n19443\n12525\n12465\n12993\n18082\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
+run_wizard < <(printf 'local\n\n\n\n\n\n\n2 3 6\n\n\ncustom\n19080\n19443\n12525\n12465\n12993\n18082\n19081\n51825\n19301\n22115\n22116\n22117\nA\n')
 [[ "$PORT_PROFILE" == custom ]]
 unset HTTP_PORT HTTPS_PORT LAMP_PORT UPTIME_KUMA_PORT WIREGUARD_PORT
 set -a
@@ -268,7 +287,7 @@ grep -Fq 'http://erp.localhost:19080' "$OUTPUT_DIR/local-installation-summary.tx
 grep -Fq 'LAMP: http://127.0.0.1:19081' "$OUTPUT_DIR/local-installation-summary.txt"
 if grep -Eq 'certificatesResolvers|acme' "$BASM_ROOT/config/traefik-static.yml"; then exit 1; fi
 
-run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\nnon-static\nshort\nabcdefghijklmnopqrstuvwxyz12\n2 3 6 9\n\nstandard\nA\n')
+run_wizard < <(printf 'business.example\n\nadmin@business.dk\n\n\n\n\n\n\nnon-static\nshort\nabcdefghijklmnopqrstuvwxyz12\n2 3 6 9\n\nno\nstandard\nA\n')
 grep -Fqx 'IP_MODE="non-static"' "$BASM_ENV_FILE"
 grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
 (

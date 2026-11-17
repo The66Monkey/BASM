@@ -135,6 +135,24 @@ workflows may need manual examples instead; validation is never bypassed.
 Choose `no` on an installer rerun to stop automatic attempts; this does not
 delete already-created records.
 
+### Swedish ROT/RUT in ERPNext
+
+The modules step also offers **Include Swedish ROT/RUT workflow?**, default
+**no**. Enabling it requires a published custom ERPNext v16 image containing
+the optional `basm_rot_rut` app. BASM Core does not build or publish that image;
+see the ERPNext ROT/RUT guide in the [BASM-Plus repository](https://git.scandinavianhacking.dedyn.io/The66Monkey/BASM-plus).
+
+The app adds manually entered ROT/RUT invoice details and a Swedish print
+format. These fields do not change ERPNext totals, VAT or ledger entries.
+Submitted claim records can be exported as Skatteverket v1.1 XML for operator
+review and manual upload in Skatteverket's e-service. ROT and RUT requests must
+be exported separately; each file supports at most 100 claims.
+
+The app does not calculate eligibility, reduction percentages or annual
+allowances, and does not file requests automatically. Verify the current
+Skatteverket rules and each request before issuing invoices or uploading XML.
+The add-on remains opt-in pending acceptance testing on a live ERPNext v16 site.
+
 ### Choosing a backup destination
 
 The wizard offers a numbered list: the default directory, writable mounted disk

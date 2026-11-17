@@ -264,6 +264,24 @@ validate_desec_token() {
   [[ "$1" =~ ^[A-Za-z0-9._~+/=-]{16,128}$ ]]
 }
 
+validate_erp_image() {
+  [[ "$1" == */* && "$1" != *//* && "$1" != *..* &&
+    "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*:v16([.-][A-Za-z0-9._-]+)?$ ]]
+}
+
+validate_erp_configuration() {
+  case "${ERP_ROT_RUT:-no}" in
+    no) [[ "${ERP_IMAGE:-frappe/erpnext:v16}" == frappe/erpnext:v16 ]] ||
+        fail "Set ERP_IMAGE to frappe/erpnext:v16 when the ROT/RUT add-on is disabled." ;;
+    yes)
+      validate_erp_image "${ERP_IMAGE:-}" ||
+        fail "ERP_ROT_RUT=yes requires a published custom ERPNext v16 image containing basm_rot_rut."
+      [[ "${ERP_IMAGE:-}" != frappe/erpnext:v16 ]] ||
+        fail "The default ERPNext image does not contain the ROT/RUT add-on." ;;
+    *) fail "ERP_ROT_RUT must be yes or no." ;;
+  esac
+}
+
 ensure_port_defaults() {
   MANAGEMENT_BIND_ADDRESS="${MANAGEMENT_BIND_ADDRESS:-${BIND_ADDRESS:-127.0.0.1}}"
   [[ "$MANAGEMENT_BIND_ADDRESS" != 0.0.0.0 ]] || MANAGEMENT_BIND_ADDRESS=127.0.0.1
@@ -497,8 +515,9 @@ render_stack() {
   local fluxer_entrypoint=websecure fluxer_domain=""
   local hotdog_domain=""
   local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
-  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${WEB_PROTOCOL} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS} ${MAILBOX_BIND_ADDRESS} ${MAILBOX_SETUP_BIND_ADDRESS} ${MAILBOX_SETUP_PORT} ${MAILBOX_SUBMISSION_PORT} ${MAILBOX_IMAPS_PORT} ${MAILBOX_HOSTNAME}'
+  local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${WEB_PROTOCOL} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS} ${MAILBOX_BIND_ADDRESS} ${MAILBOX_SETUP_BIND_ADDRESS} ${MAILBOX_SETUP_PORT} ${MAILBOX_SUBMISSION_PORT} ${MAILBOX_IMAPS_PORT} ${MAILBOX_HOSTNAME} ${ERP_IMAGE}'
   export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME
+  export ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}"
   export BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then
     WEB_PROTOCOL="${WEB_PROTOCOL:-http}"
@@ -618,6 +637,8 @@ review_wizard() {
   printf 'Web bind address: %s\nManagement bind address: %s\n' "$BIND_ADDRESS" "$MANAGEMENT_BIND_ADDRESS"
   printf 'Public IP type: %s\nBackup destination: %s\nModules: %s\n\n' "$IP_MODE" "$BACKUP_LOCATION" "$BASM_MODULES"
   printf 'ERPNext learning examples: %s (never submitted automatically)\n' "${ERP_EXAMPLES:-no}"
+  printf 'Swedish ROT/RUT workflow: %s\n' "${ERP_ROT_RUT:-no}"
+  if [[ "${ERP_ROT_RUT:-no}" == yes ]]; then printf 'ERPNext image: %s\n' "$ERP_IMAGE"; fi
   warn_backup_filesystem "$BACKUP_LOCATION"
   port_summary
   if [[ "$DEPLOYMENT_MODE" == local ]]; then
@@ -845,6 +866,8 @@ FLUXER_VOICE_TCP_PORT=$FLUXER_VOICE_TCP_PORT
 FLUXER_VOICE_UDP_PORT=$FLUXER_VOICE_UDP_PORT
 ERP_URL="$ERP_URL"
 ERP_EXAMPLES="${ERP_EXAMPLES:-no}"
+ERP_ROT_RUT="${ERP_ROT_RUT:-no}"
+ERP_IMAGE="${ERP_IMAGE:-frappe/erpnext:v16}"
 MAIL_URL="$MAIL_URL"
 CLOUD_URL="$CLOUD_URL"
 MAILBOX_HOSTNAME="$MAILBOX_HOSTNAME"
@@ -879,7 +902,7 @@ run_wizard() {
   local -a settings=(
     LOCAL_MODE LOCAL_BIND_ADDRESS BASM_ROOT BASM_ENV_FILE DEPLOYMENT_MODE BIND_ADDRESS
     MANAGEMENT_BIND_ADDRESS BASM_CONTAINER_PREFIX PORT_PROFILE COMPANY_NAME PRIMARY_DOMAIN
-    ADMIN_EMAIL TIMEZONE NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL ERP_EXAMPLES MAIL_URL CLOUD_URL
+    ADMIN_EMAIL TIMEZONE         NEXTCLOUD_ADMIN_USER BACKUP_LOCATION ERP_URL ERP_EXAMPLES ERP_ROT_RUT ERP_IMAGE MAIL_URL CLOUD_URL
     IP_MODE DESEC_TOKEN BASM_MODULES HTTP_PORT HTTPS_PORT SSH_PORT SMTP_BIND_ADDRESS SMTP_PORT
     MAILBOX_HOSTNAME MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT
     MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT
@@ -912,7 +935,7 @@ run_wizard() {
 
   write_env_file
   read_deployment_settings
-  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT RESTIC_PASSWORD
+  export DEPLOYMENT_MODE BIND_ADDRESS BASM_CONTAINER_PREFIX COMPANY_NAME PRIMARY_DOMAIN ADMIN_EMAIL TIMEZONE HTTP_PORT HTTPS_PORT SSH_PORT ERP_URL ERP_ROT_RUT ERP_IMAGE MAIL_URL CLOUD_URL MAILBOX_HOSTNAME BACKUP_LOCATION BASM_ROOT BASM_MODULES DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD NEXTCLOUD_DB_PASSWORD WEB_PROTOCOL SMTP_BIND_ADDRESS SMTP_PORT MAILBOX_BIND_ADDRESS MAILBOX_SETUP_BIND_ADDRESS MAILBOX_SETUP_PORT MAILBOX_SUBMISSION_PORT MAILBOX_IMAPS_PORT RESTIC_PASSWORD
 }
 
 collect_wizard_settings() {
@@ -995,6 +1018,19 @@ collect_wizard_settings() {
     yes|y) ERP_EXAMPLES=yes ;;
     no|n) ERP_EXAMPLES=no ;;
   esac
+  printf '\nOptional BASM-Plus ERPNext app for Swedish ROT/RUT invoice details and XML export.\n'
+  printf 'It requires a published custom ERPNext v16 image containing basm_rot_rut.\n'
+  local rot_rut
+  rot_rut="$(prompt_value "Include Swedish ROT/RUT workflow? (yes/no)" "${ERP_ROT_RUT:-no}" '[[ "${1,,}" == yes || "${1,,}" == no || "${1,,}" == y || "${1,,}" == n ]]')" || return
+  case "${rot_rut,,}" in
+    yes|y)
+      ERP_ROT_RUT=yes
+      ERP_IMAGE="$(prompt_value "Custom ERPNext v16 image containing basm_rot_rut" "${ERP_IMAGE:-}" 'validate_erp_image "$1"')" || return ;;
+    no|n)
+      ERP_ROT_RUT=no
+      ERP_IMAGE=frappe/erpnext:v16 ;;
+  esac
+  validate_erp_configuration
   if [[ "$DEPLOYMENT_MODE" == local ]] && module_selected fluxer; then
     fail "Fluxer requires production HTTPS and public network access; it cannot be selected in BASM local mode."
   fi
@@ -1156,6 +1192,7 @@ run_module_install() {
   local script_path="$MODULES_DIR/${module_name}.sh"
 
   ensure_port_defaults
+  validate_erp_configuration
   (BASM_MODULES="${BASM_MODULES:-basm} $module_name"; validate_port_plan) || fail "Resolve port conflicts in the setup wizard before installing this module."
 
   if [[ ! -f "$script_path" ]]; then
