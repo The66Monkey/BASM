@@ -1018,7 +1018,7 @@ collect_wizard_settings() {
     yes|y) ERP_EXAMPLES=yes ;;
     no|n) ERP_EXAMPLES=no ;;
   esac
-  printf '\nOptional BASM-Plus ERPNext app for Swedish ROT/RUT invoice details and XML export.\n'
+  printf '\nOptional ERPNext app for Swedish ROT/RUT invoice details and XML export.\n'
   printf 'It requires a published custom ERPNext v16 image containing basm_rot_rut.\n'
   local rot_rut
   rot_rut="$(prompt_value "Include Swedish ROT/RUT workflow? (yes/no)" "${ERP_ROT_RUT:-no}" '[[ "${1,,}" == yes || "${1,,}" == no || "${1,,}" == y || "${1,,}" == n ]]')" || return

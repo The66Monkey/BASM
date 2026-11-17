@@ -1,0 +1,1 @@
+recursive-include basm_rot_rut *.json *.js *.html *.txt

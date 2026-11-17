@@ -1,0 +1,35 @@
+{
+  "doctype": "DocType",
+  "name": "ROT RUT Work Area",
+  "module": "ROT RUT",
+  "istable": 1,
+  "editable_grid": 1,
+  "fields": [
+    {
+      "fieldname": "work_type",
+      "label": "Work type",
+      "fieldtype": "Select",
+      "options": "BYGG\nEL\nGLASARBETE\nMARKARBETE\nMALNING_TAPETSERING\nMURNING\nVVS\nBARNPASSNING\nFLYTTJANSTER\nIT_TJANSTER\nKLAD_TEXTILVARD\nMOBLERING\nPERSONLIG_OMSORG\nREPARATION_VITVAROR\nSNOSKOTTNING\nSTADNING\nTILLSYN_AV_BOSTAD\nTRADGARDSARBETE\nTRANSPORT_TILL_FORSALJNING\nTVATT_VID_TVATTINRATTNING",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "hours",
+      "label": "Actual hours",
+      "fieldtype": "Int",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "subcontractor_hours",
+      "label": "Subcontractor hours (recordkeeping)",
+      "fieldtype": "Int"
+    },
+    {
+      "fieldname": "material_cost",
+      "label": "Material cost (SEK, whole kronor)",
+      "fieldtype": "Currency",
+      "in_list_view": 1
+    }
+  ],
+  "permissions": []
+}

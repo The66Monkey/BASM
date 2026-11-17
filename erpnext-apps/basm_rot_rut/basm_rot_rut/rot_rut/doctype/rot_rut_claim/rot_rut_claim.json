@@ -1,0 +1,202 @@
+{
+  "doctype": "DocType",
+  "name": "ROT RUT Claim",
+  "module": "ROT RUT",
+  "autoname": "naming_series:",
+  "naming_rule": "By \"Naming Series\" field",
+  "is_submittable": 1,
+  "track_changes": 1,
+  "title_field": "sales_invoice",
+  "search_fields": "sales_invoice,buyer_id",
+  "fields": [
+    {
+      "fieldname": "naming_series",
+      "label": "Series",
+      "fieldtype": "Select",
+      "options": "RRC-.YYYY.-.#####",
+      "default": "RRC-.YYYY.-.#####",
+      "reqd": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "claim_section",
+      "label": "Claim",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "claim_type",
+      "label": "Claim type",
+      "fieldtype": "Select",
+      "options": "ROT\nRUT",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "company",
+      "label": "Company",
+      "fieldtype": "Link",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sales_invoice",
+      "label": "Sales Invoice",
+      "fieldtype": "Link",
+      "options": "Sales Invoice",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "invoice_number",
+      "label": "Invoice number for request",
+      "fieldtype": "Data",
+      "length": 20,
+      "description": "Use the invoice number that should appear in the XML. It is not inferred if the linked ERPNext name is longer than Skatteverket's limit."
+    },
+    {
+      "fieldname": "buyer_id",
+      "label": "Buyer personal or organisation number",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "completion_and_payment_section",
+      "label": "Completed work and payment",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "work_completed",
+      "label": "Work is completed",
+      "fieldtype": "Check",
+      "default": "0",
+      "reqd": 1
+    },
+    {
+      "fieldname": "electronic_payment_confirmed",
+      "label": "Electronic payment received and confirmed",
+      "fieldtype": "Check",
+      "default": "0",
+      "reqd": 1
+    },
+    {
+      "fieldname": "payment_date",
+      "label": "Customer payment date",
+      "fieldtype": "Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "paid_amount",
+      "label": "Amount received from buyer (SEK, whole kronor)",
+      "fieldtype": "Currency",
+      "reqd": 1
+    },
+    {
+      "fieldname": "requested_amount",
+      "label": "Amount requested from Skatteverket (SEK, whole kronor)",
+      "fieldtype": "Currency",
+      "reqd": 1
+    },
+    {
+      "fieldname": "labor_cost",
+      "label": "Labour cost (SEK, whole kronor)",
+      "fieldtype": "Currency",
+      "reqd": 1
+    },
+    {
+      "fieldname": "other_cost",
+      "label": "Other costs (SEK, whole kronor)",
+      "fieldtype": "Currency",
+      "default": "0",
+      "reqd": 1
+    },
+    {
+      "fieldname": "property_section",
+      "label": "ROT property",
+      "fieldtype": "Section Break",
+      "depends_on": "eval:doc.claim_type === 'ROT'"
+    },
+    {
+      "fieldname": "property_type",
+      "label": "Property type",
+      "fieldtype": "Select",
+      "options": "\nSmall house\nHousing association apartment",
+      "depends_on": "eval:doc.claim_type === 'ROT'"
+    },
+    {
+      "fieldname": "property_designation",
+      "label": "Property designation",
+      "fieldtype": "Data",
+      "depends_on": "eval:doc.property_type === 'Small house'"
+    },
+    {
+      "fieldname": "brf_org_number",
+      "label": "Housing association organisation number",
+      "fieldtype": "Data",
+      "depends_on": "eval:doc.property_type === 'Housing association apartment'"
+    },
+    {
+      "fieldname": "apartment_number",
+      "label": "Apartment number",
+      "fieldtype": "Data",
+      "depends_on": "eval:doc.property_type === 'Housing association apartment'"
+    },
+    {
+      "fieldname": "work_section",
+      "label": "Work areas",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "work_areas",
+      "label": "Work areas",
+      "fieldtype": "Table",
+      "options": "ROT RUT Work Area",
+      "reqd": 1
+    },
+    {
+      "fieldname": "workers_section",
+      "label": "Workforce",
+      "fieldtype": "Section Break"
+    },
+    {
+      "fieldname": "subcontractor_used",
+      "label": "Subcontractor used",
+      "fieldtype": "Check",
+      "default": "0",
+      "reqd": 1
+    },
+    {
+      "fieldname": "staffing_company_used",
+      "label": "Staffing company used",
+      "fieldtype": "Check",
+      "default": "0",
+      "reqd": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1
+    },
+    {
+      "role": "Accounts Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "submit": 1,
+      "cancel": 1
+    },
+    {
+      "role": "Accounts User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1
+    }
+  ]
+}

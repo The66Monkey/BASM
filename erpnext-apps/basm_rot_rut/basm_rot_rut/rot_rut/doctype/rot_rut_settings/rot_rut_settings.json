@@ -1,0 +1,32 @@
+{
+  "doctype": "DocType",
+  "name": "ROT RUT Settings",
+  "module": "ROT RUT",
+  "issingle": 1,
+  "fields": [
+    {
+      "fieldname": "performer_org_number",
+      "label": "Performer organisation number",
+      "fieldtype": "Data",
+      "reqd": 1
+    },
+    {
+      "fieldname": "export_note",
+      "label": "Export process",
+      "fieldtype": "HTML",
+      "options": "<p>XML files are prepared for manual review and upload in Skatteverket's ROT och rut - företag e-service. ERPNext does not submit claims.</p>"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1
+    },
+    {
+      "role": "Accounts Manager",
+      "read": 1,
+      "write": 1
+    }
+  ]
+}

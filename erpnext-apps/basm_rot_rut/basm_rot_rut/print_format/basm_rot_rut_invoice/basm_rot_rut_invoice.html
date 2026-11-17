@@ -1,0 +1,94 @@
+<div class="print-heading">
+  <h2>Faktura</h2>
+  <h3>{{ doc.name | e }}</h3>
+</div>
+<div class="row">
+  <div class="col-xs-6">
+    <h3>{{ doc.company | e }}</h3>
+    {{ doc.company_address_display or "" }}
+    {% if doc.company_tax_id %}
+    <p><strong>Organisationsnummer:</strong> {{ doc.company_tax_id | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_f_tax_confirmed %}
+    <p>Godkänd för F-skatt</p>
+    {% endif %}
+  </div>
+  <div class="col-xs-6">
+    <strong>Kund</strong><br>
+    {{ doc.customer_name | e }}<br>
+    {{ doc.address_display or "" }}
+  </div>
+  <div class="col-xs-6 text-right">
+    <strong>Fakturadatum:</strong> {{ doc.get_formatted("posting_date") }}<br>
+    <strong>Förfallodatum:</strong> {{ doc.get_formatted("due_date") }}
+  </div>
+</div>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>Artikel/tjänst</th>
+      <th>Beskrivning</th>
+      <th class="text-right">Antal</th>
+      <th class="text-right">Belopp</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.items %}
+    <tr>
+      <td>{{ row.item_name | e }}</td>
+      <td>{{ row.description | e }}</td>
+      <td class="text-right">{{ row.get_formatted("qty", doc) }}</td>
+      <td class="text-right">{{ row.get_formatted("amount", doc) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="row">
+  <div class="col-xs-6">
+    {% if doc.custom_rot_rut_type %}
+    <h3>Uppgifter för ROT/RUT</h3>
+    <p><strong>Typ:</strong> {{ doc.custom_rot_rut_type | e }}</p>
+    <p><strong>Köparens person- eller organisationsnummer:</strong> {{ doc.custom_rot_rut_buyer_id | e }}</p>
+    {% if doc.custom_rot_rut_property_type %}
+    <p><strong>Bostadstyp:</strong> {{ doc.custom_rot_rut_property_type | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_property_designation %}
+    <p><strong>Fastighetsbeteckning:</strong> {{ doc.custom_rot_rut_property_designation | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_brf_org_number %}
+    <p><strong>Bostadsrättsföreningens organisationsnummer:</strong> {{ doc.custom_rot_rut_brf_org_number | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_apartment_number %}
+    <p><strong>Lägenhetsnummer:</strong> {{ doc.custom_rot_rut_apartment_number | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_work_type %}
+    <p><strong>Typ av arbete:</strong> {{ doc.custom_rot_rut_work_type | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_work_address %}
+    <p><strong>Arbetsplats:</strong> {{ doc.custom_rot_rut_work_address | e }}</p>
+    {% endif %}
+    {% if doc.custom_rot_rut_work_start %}
+    <p><strong>Arbetsperiod:</strong> {{ doc.get_formatted("custom_rot_rut_work_start") }}
+      {% if doc.custom_rot_rut_work_end %}–{{ doc.get_formatted("custom_rot_rut_work_end") }}{% endif %}
+    </p>
+    {% endif %}
+    <p><strong>Arbetskostnad (manuellt angiven):</strong> {{ doc.get_formatted("custom_rot_rut_labor_cost") }}</p>
+    <p><strong>Materialkostnad (manuellt angiven):</strong> {{ doc.get_formatted("custom_rot_rut_material_cost") }}</p>
+    <p><strong>Övriga kostnader (manuellt angivna):</strong> {{ doc.get_formatted("custom_rot_rut_other_cost") }}</p>
+    {% endif %}
+  </div>
+  <div class="col-xs-6 text-right">
+    <p><strong>Summa exkl. moms:</strong> {{ doc.get_formatted("total") }}</p>
+    {% for tax in doc.taxes %}
+    <p><strong>{{ tax.description | e }}</strong>: {{ tax.get_formatted("tax_amount", doc) }}</p>
+    {% endfor %}
+    <p><strong>Summa att betala enligt fakturan:</strong> {{ doc.get_formatted("grand_total") }}</p>
+    {% if doc.custom_rot_rut_type %}
+    <p><strong>Preliminär skattereduktion (manuellt angiven):</strong> {{ doc.get_formatted("custom_rot_rut_reduction") }}</p>
+    <p><strong>Preliminärt kundbelopp efter skattereduktion (manuellt angivet):</strong> {{ doc.get_formatted("custom_rot_rut_customer_amount") }}</p>
+    {% endif %}
+  </div>
+</div>
+<p class="text-muted">
+  ROT/RUT-uppgifter och belopp på utskriften anges manuellt. De ändrar inte fakturans totalsumma, moms eller bokföring. Kontrollera kunduppgifter, arbete, bostad, betalning och aktuella villkor innan fakturan utfärdas eller en begäran lämnas in. Begäran om utbetalning görs separat i Skatteverkets e-tjänst.
+</p>
