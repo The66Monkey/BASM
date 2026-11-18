@@ -11,15 +11,19 @@ ERP_URL=erp.example.com CLOUD_URL=cloud.example.com MAIL_URL=mail.example.com MA
 FLUXER_DOMAIN=chat.example.com
 RESTIC_PASSWORD=must-not-be-published
 for mode in production local; do
-  for modules in basm 'basm fluxer' 'basm lamp hotdog' 'basm lamp fluxer hotdog'; do
-    for port in 443 19443; do
-      DEPLOYMENT_MODE="$mode" BASM_MODULES="$modules" HTTPS_PORT="$port" HTTP_PORT=19080 render_homepage
-      python3 - "$BASM_ROOT" "$COMPANY_NAME" "$mode" "$modules" "$port" <<'PY'
+  lamp_port=8080
+  [[ "$mode" != local ]] || lamp_port=18081
+  for modules in basm 'basm lamp' 'basm fluxer' 'basm lamp hotdog' 'basm lamp fluxer hotdog'; do
+    for management in 127.0.0.1 192.168.50.20; do
+      for port in 443 19443; do
+        DEPLOYMENT_MODE="$mode" BASM_MODULES="$modules" HTTPS_PORT="$port" HTTP_PORT=19080 \
+          MANAGEMENT_BIND_ADDRESS="$management" LAMP_PORT="$lamp_port" render_homepage
+        python3 - "$BASM_ROOT" "$COMPANY_NAME" "$mode" "$modules" "$port" "$management" "$lamp_port" <<'PY'
 from html.parser import HTMLParser
 from pathlib import Path
 import sys
 
-root, company, mode, modules, port = sys.argv[1:]
+root, company, mode, modules, port, management, lamp_port = sys.argv[1:]
 page = Path(root, "home/index.html").read_text()
 
 class Page(HTMLParser):
@@ -47,7 +51,11 @@ if "fluxer" in selected:
     hosts.append("chat")
 if "hotdog" in selected:
     hosts.append("hotdog")
-assert parsed.links == [f"{scheme}://{host}.example.com{suffix}/" for host in hosts] + ["https://github.com/The66Monkey/BASM"]
+expected = [f"{scheme}://{host}.example.com{suffix}/" for host in hosts]
+if "lamp" in selected:
+    lamp_host = "localhost" if management == "127.0.0.1" else management
+    expected.append(f"http://{lamp_host}:{lamp_port}/")
+assert parsed.links == expected + ["https://github.com/The66Monkey/BASM"]
 assert company in "".join(parsed.text)
 assert "Welcome to your BASM" in "".join(parsed.text)
 assert "sudo less /opt/basm/handover/for-the-user.txt" in "".join(parsed.text)
@@ -58,13 +66,21 @@ assert "Email - Mailboxes" not in "".join(parsed.text)
 assert 'class="service-mark mark-stalwart" aria-hidden="true">S</span>' in page
 assert 'class="service-mark mark-erpnext" aria-hidden="true">E</span>' in page
 assert ("HotDog CMS - Website" in page) == ("hotdog" in selected)
+assert ("LAMP - Website (private)" in page) == ("lamp" in selected)
+assert ("Private LAMP access" in page) == ("lamp" in selected and management == "127.0.0.1")
+if "lamp" in selected and management == "127.0.0.1":
+    assert f"ssh -N -L {lamp_port}:127.0.0.1:{lamp_port} <server-user>@<server-address>" in "".join(parsed.text)
+assert "https://lamp." not in page
 assert not parsed.scripts
 assert "must-not-be-published" not in page
-assert "3001" not in page and "8080" not in page
+assert "3001" not in page
+if "lamp" not in selected:
+    assert "8080" not in page and "18081" not in page
 assert Path(root, "home/mascot.png").is_file()
 assert Path(root, "home").stat().st_mode & 0o777 == 0o755
 assert Path(root, "home/index.html").stat().st_mode & 0o777 == 0o644
 PY
+      done
     done
   done
 done

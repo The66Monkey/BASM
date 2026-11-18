@@ -8,8 +8,12 @@ your configured root, or `/opt/basm-local` for local mode.
 Open `https://YOUR-DOMAIN/` (include your configured HTTPS port if nonstandard).
 The public start page shows the business name and links to business services;
 it grants no application access. The mail link is for Stalwart administration,
-not an employee inbox. LAMP, Uptime Kuma, vaults and server access remain
-private and are not linked. Sign in separately to each application.
+not an employee inbox. Selected LAMP installations have a private HTTP link to
+their website index, using the configured management address and LAMP port.
+Loopback listeners link to `localhost` and show the SSH tunnel command required
+from another computer. This is a website link, not a live health indicator;
+it adds no public route or port exposure. Uptime Kuma, vaults and server access
+remain private and are not linked. Sign in separately to each application.
 
 Local tests use `http://home.localhost:18080/`, or `home.basm.test` with private
 LAN DNS and the selected HTTP port. The existing localhost/IP Nextcloud routes

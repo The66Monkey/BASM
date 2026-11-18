@@ -585,14 +585,15 @@ configure_local_mode() {
 }
 
 render_homepage() {
-  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer="" hotdog=""
+  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer="" hotdog="" lamp=""
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then scheme=http; port="$HTTP_PORT"; fi
   if module_selected fluxer; then fluxer="$FLUXER_DOMAIN"; fi
   if module_selected hotdog; then hotdog="hotdog.$PRIMARY_DOMAIN"; fi
+  if module_selected lamp; then lamp="${MANAGEMENT_BIND_ADDRESS:-127.0.0.1}"; fi
   install -d -m 755 "$destination/home" || return
   install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/home/mascot.png" || return
   /usr/bin/python3 "$ROOT_DIR/templates/render-homepage.py" "$ROOT_DIR/templates/home.html" \
-    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" "$hotdog" \
+    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" "$hotdog" "$lamp" "${LAMP_PORT:-8080}" \
     > "$destination/home/index.html" || return
   chmod 644 "$destination/home/index.html"
 }
