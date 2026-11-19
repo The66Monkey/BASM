@@ -4,7 +4,11 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/core.sh"
 
 module_install() {
   local module_dir="${1:-$BASM_ROOT/modules/lamp}" hotdog_volumes=""
-  local hotdog_network="" hotdog_network_definition=""
+  local lamp_network="" lamp_network_definition=""
+  if [[ "${DEPLOYMENT_MODE:-production}" != local ]] || module_selected hotdog; then
+    lamp_network=$'    networks:\n      default: {}\n      basm-net:\n        aliases:\n          - basm-website-lamp\n'
+    lamp_network_definition=$'\nnetworks:\n  default: {}\n  basm-net:\n    external: true\n    name: '"${BASM_CONTAINER_PREFIX:-basm}-net"
+  fi
   log "Installing LAMP module"
   ensure_port_defaults
   ensure_dir "$module_dir/www" || return
@@ -43,8 +47,7 @@ HTML
 APACHE
     chmod 644 "$module_dir/hotdog-vhost.conf" || return
     hotdog_volumes=$'      - ./hotdog:/var/www/hotdog:ro\n      - ./hotdog-vhost.conf:/etc/apache2/sites-enabled/001-hotdog.conf:ro\n'
-    hotdog_network=$'    networks:\n      basm-net:\n        aliases:\n          - basm-hotdog-lamp\n'
-    hotdog_network_definition=$'\nnetworks:\n  basm-net:\n    external: true\n    name: '"${BASM_CONTAINER_PREFIX:-basm}-net"
+    lamp_network+=$'          - basm-hotdog-lamp\n'
   fi
   cat > "$module_dir/docker-compose.yml" <<EOT || return
 name: ${BASM_CONTAINER_PREFIX:-basm}-lamp
@@ -59,10 +62,10 @@ services:
     volumes:
       - ./www:/var/www/html
 ${hotdog_volumes}    restart: unless-stopped
-${hotdog_network}
+${lamp_network}
 EOT
-  if [[ -n "$hotdog_network_definition" ]]; then
-    printf '%s\n' "$hotdog_network_definition" >> "$module_dir/docker-compose.yml" || return
+  if [[ -n "$lamp_network_definition" ]]; then
+    printf '%s\n' "$lamp_network_definition" >> "$module_dir/docker-compose.yml" || return
   fi
   log "LAMP module configuration generated"
 }

@@ -53,8 +53,11 @@ if "hotdog" in selected:
     hosts.append("hotdog")
 expected = [f"{scheme}://{host}.example.com{suffix}/" for host in hosts]
 if "lamp" in selected:
-    lamp_host = "localhost" if management == "127.0.0.1" else management
-    expected.append(f"http://{lamp_host}:{lamp_port}/")
+    if mode == "production":
+        expected.append(f"https://lamp.example.com{suffix}/")
+    else:
+        lamp_host = "localhost" if management == "127.0.0.1" else management
+        expected.append(f"http://{lamp_host}:{lamp_port}/")
 assert parsed.links == expected + ["https://github.com/The66Monkey/BASM"]
 assert company in "".join(parsed.text)
 assert "Welcome to your BASM" in "".join(parsed.text)
@@ -66,11 +69,13 @@ assert "Email - Mailboxes" not in "".join(parsed.text)
 assert 'class="service-mark mark-stalwart" aria-hidden="true">S</span>' in page
 assert 'class="service-mark mark-erpnext" aria-hidden="true">E</span>' in page
 assert ("HotDog CMS - Website" in page) == ("hotdog" in selected)
-assert ("LAMP - Website (private)" in page) == ("lamp" in selected)
-assert ("Private LAMP access" in page) == ("lamp" in selected and management == "127.0.0.1")
-if "lamp" in selected and management == "127.0.0.1":
+assert ("LAMP - Website" in page) == ("lamp" in selected)
+assert ("LAMP - Website (private)" in page) == ("lamp" in selected and mode == "local")
+assert ("Private LAMP access" in page) == ("lamp" in selected and mode == "local" and management == "127.0.0.1")
+if "lamp" in selected and mode == "local" and management == "127.0.0.1":
     assert f"ssh -N -L {lamp_port}:127.0.0.1:{lamp_port} <server-user>@<server-address>" in "".join(parsed.text)
-assert "https://lamp." not in page
+if mode == "production":
+    assert "localhost:8080" not in page
 assert not parsed.scripts
 assert "must-not-be-published" not in page
 assert "3001" not in page

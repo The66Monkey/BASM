@@ -39,24 +39,52 @@ if [[ -z "$current_ip" ]]; then
   note "Could not determine the public IPv4 address from either lookup service."
   exit 1
 fi
-last_ip="$(cat "$STATE_FILE" 2>/dev/null || true)"
-[[ "$current_ip" != "$last_ip" ]] || exit 0
-
-hostnames=("$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "mx.$PRIMARY_DOMAIN")
+primary_hostnames=("$PRIMARY_DOMAIN" "$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "mx.$PRIMARY_DOMAIN")
 if [[ " ${BASM_MODULES:-basm} " == *" fluxer "* && -n "${FLUXER_DOMAIN:-}" ]]; then
-  hostnames+=("$FLUXER_DOMAIN")
+  primary_hostnames+=("$FLUXER_DOMAIN")
 fi
 if [[ " ${BASM_MODULES:-basm} " == *" hotdog "* ]]; then
-  hostnames+=("hotdog.$PRIMARY_DOMAIN")
+  primary_hostnames+=("hotdog.$PRIMARY_DOMAIN")
 fi
-hostnames="$(printf '%s\n' "${hostnames[@]}" | sort -u | paste -sd, -)"
-note "Public IP changed from ${last_ip:-unknown} to $current_ip; updating $hostnames"
-# The token is passed on stdin so it never appears in the process list.
-if ! printf 'header = "Authorization: Token %s"\n' "$DESEC_TOKEN" |
-  curl -4 -fsS --max-time 30 -K - -o /dev/null \
-    "https://update.dedyn.io/?hostname=$hostnames&myipv4=$current_ip&myipv6=preserve"; then
-  note "deSEC update failed; will retry on the next run."
-  exit 1
+if [[ " ${BASM_MODULES:-basm} " == *" lamp "* && "${DEPLOYMENT_MODE:-production}" != local ]]; then
+  primary_hostnames+=("lamp.$PRIMARY_DOMAIN")
 fi
-printf '%s\n' "$current_ip" > "$STATE_FILE"
-note "Updated $hostnames -> $current_ip"
+hostnames="$(printf '%s\n' "${primary_hostnames[@]}" | sort -u | paste -sd, -)"
+update_groups=("$hostnames")
+managed_hostnames="$hostnames"
+if [[ -f "$BASM_ROOT/config/ddns-extra-hostnames" ]]; then
+  while IFS= read -r hostname || [[ -n "$hostname" ]]; do
+    [[ -n "$hostname" ]] || continue
+    if ! validate_domain "$hostname"; then
+      note "Invalid hostname in config/ddns-extra-hostnames: $hostname"
+      exit 1
+    fi
+    hostname="${hostname,,}"
+    if [[ ",$managed_hostnames," != *",$hostname,"* ]]; then
+      # deSEC's update API requires each request to stay within one DNS zone.
+      update_groups+=("$hostname")
+      managed_hostnames+=",$hostname"
+    fi
+  done < "$BASM_ROOT/config/ddns-extra-hostnames"
+fi
+
+last_ip="" last_hostnames=""
+if [[ -f "$STATE_FILE" ]]; then
+  last_ip="$(sed -n '1p' "$STATE_FILE")"
+  last_hostnames="$(sed -n '2p' "$STATE_FILE")"
+fi
+[[ "$current_ip" != "$last_ip" || "$managed_hostnames" != "$last_hostnames" ]] || exit 0
+
+note "Public IP or managed hostnames changed; updating $managed_hostnames -> $current_ip"
+for hostnames in "${update_groups[@]}"; do
+  # The token is passed on stdin so it never appears in the process list.
+  if ! printf 'header = "Authorization: Token %s"\n' "$DESEC_TOKEN" |
+    curl -4 -fsS --max-time 30 -K - -o /dev/null \
+      "https://update.dedyn.io/?hostname=$hostnames&myipv4=$current_ip&myipv6=preserve"; then
+    note "deSEC update failed for $hostnames; will retry on the next run."
+    exit 1
+  fi
+done
+printf '%s\n%s\n' "$current_ip" "$managed_hostnames" > "$STATE_FILE.tmp"
+mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+note "Updated $managed_hostnames -> $current_ip"

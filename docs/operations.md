@@ -8,11 +8,14 @@ your configured root, or `/opt/basm-local` for local mode.
 Open `https://YOUR-DOMAIN/` (include your configured HTTPS port if nonstandard).
 The public start page shows the business name and links to business services;
 it grants no application access. The mail link is for Stalwart administration,
-not an employee inbox. Selected LAMP installations have a private HTTP link to
-their website index, using the configured management address and LAMP port.
-Loopback listeners link to `localhost` and show the SSH tunnel command required
-from another computer. This is a website link, not a live health indicator;
-it adds no public route or port exposure. Uptime Kuma, vaults and server access
+not an employee inbox. Selected production LAMP installations link to
+`https://lamp.YOUR-DOMAIN/`, using the configured HTTPS port. This serves
+`modules/lamp/www` through Traefik with managed TLS and no added authentication.
+Publish the generated `lamp` DNS record; DDNS maintains it on dynamic-IP installs.
+An upstream HTTPS edge must forward this hostname to BASM too.
+Local-mode LAMP links retain the management address and HTTP port; loopback
+links show the required SSH tunnel command. Links are not live health indicators.
+Uptime Kuma, vaults and server access
 remain private and are not linked. Sign in separately to each application.
 
 Local tests use `http://home.localhost:18080/`, or `home.basm.test` with private
@@ -171,8 +174,16 @@ the six-month schedule.
 
 New production installs default to dynamic-IP mode. The DDNS cron job checks
 every four hours, updating A records for the root, ERP, mail, cloud, `mx`, and
-selected Fluxer when the public IPv4 changes. All names must belong to the same
-deSEC domain. Logs: `logs/ddns.log`.
+selected Fluxer when the public IPv4 changes. Logs: `logs/ddns.log`.
+
+To keep additional website domains on the same public IPv4, list their full
+hostnames, one per line, in `/opt/basm/config/ddns-extra-hostnames` (root-owned,
+mode 0600). The existing deSEC token must have permission to update each zone.
+Additional hostnames are updated in separate requests, preserving existing
+AAAA records. Use a CNAME for `www` when it should follow an additional domain.
+Only list A-record names owned by this updater; do not list CNAMEs or names
+managed by DEN. This does not change application domains, HTTPS routes, MX or
+other mail records.
 
 To check the public IP and update DNS immediately, run:
 
@@ -181,7 +192,8 @@ sudo /bin/bash /opt/basm/maintenance/ddns-update.sh /opt/basm
 ```
 
 For a custom installation root, replace both `/opt/basm` paths with that root.
-The script updates deSEC only if the detected IP differs from the saved one.
+The script updates deSEC when the detected IP or configured hostname list
+differs from the saved state.
 Without a manual check, access may be unavailable for up to roughly four hours
 after an address change. Dynamic IPs can also affect mail deliverability, and
 DDNS does not change PTR records. See [DNS setup](router-setup.md) for records
@@ -189,7 +201,8 @@ DDNS does not manage.
 
 ## Private management services
 
-LAMP and Uptime Kuma bind to loopback in production. From your workstation:
+The direct LAMP HTTP and Uptime Kuma listeners bind to loopback in production.
+LAMP also has the HTTPS website route described above. For direct access:
 
 ```sh
 ssh -N -L 18080:127.0.0.1:8080 -L 13001:127.0.0.1:3001 USER@BASM-LAN-IP

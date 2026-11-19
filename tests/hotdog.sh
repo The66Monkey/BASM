@@ -75,7 +75,9 @@ volumes = compose["services"]["lamp"]["volumes"]
 assert "./www:/var/www/html" in volumes
 assert "./hotdog:/var/www/hotdog:ro" in volumes
 assert "./hotdog-vhost.conf:/etc/apache2/sites-enabled/001-hotdog.conf:ro" in volumes
-assert compose["services"]["lamp"]["networks"]["basm-net"]["aliases"] == ["basm-hotdog-lamp"]
+assert compose["services"]["lamp"]["networks"]["basm-net"]["aliases"] == [
+    "basm-website-lamp", "basm-hotdog-lamp"
+]
 assert compose["networks"]["basm-net"] == {"external": True, "name": "basm-test-net"}
 PY
 )
@@ -140,3 +142,34 @@ STUB
 )
 
 printf 'HotDog dependencies, isolated LAMP publishing, verified installation and preservation passed.\n'
+
+for mode in production local; do
+  (
+    source "$ROOT_DIR/modules/lamp.sh"
+    BASM_ROOT="$TEST_DIR/lamp-only-$mode"
+    BASM_MODULES='basm lamp'
+    BASM_CONTAINER_PREFIX=basm-test
+    DEPLOYMENT_MODE="$mode"
+    MANAGEMENT_BIND_ADDRESS=127.0.0.1
+    LAMP_PORT=18081
+    module_install
+    python3 - "$BASM_ROOT/modules/lamp/docker-compose.yml" "$mode" <<'PY'
+import sys
+import yaml
+
+compose = yaml.safe_load(open(sys.argv[1]))
+lamp = compose["services"]["lamp"]
+assert lamp["ports"] == ["127.0.0.1:18081:80"]
+assert lamp["volumes"] == ["./www:/var/www/html"]
+if sys.argv[2] == "production":
+    assert lamp["networks"] == {
+        "default": {}, "basm-net": {"aliases": ["basm-website-lamp"]}
+    }
+    assert compose["networks"]["basm-net"] == {"external": True, "name": "basm-test-net"}
+else:
+    assert "networks" not in lamp
+    assert "networks" not in compose
+PY
+  )
+done
+printf 'Standalone production LAMP proxy networking and unchanged local listener passed.\n'

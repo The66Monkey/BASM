@@ -13,9 +13,9 @@ base = {"http": {"routers": {"home": {"service": "home"}}, "services": {"home": 
 with tempfile.TemporaryDirectory() as directory:
     custom = Path(directory, "custom.yml")
 
-    def render(domain="", entrypoint="websecure", hotdog=""):
+    def render(domain="", entrypoint="websecure", hotdog="", lamp=""):
         return subprocess.run(
-            [sys.executable, str(renderer), domain, "29461", entrypoint, str(custom), hotdog, "18081"],
+            [sys.executable, str(renderer), domain, "29461", entrypoint, str(custom), hotdog, lamp],
             input=json.dumps(base), text=True, capture_output=True,
         )
 
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as directory:
             assert merged["routers"]["fluxer"]["entryPoints"] == [entrypoint]
             assert ("tls" in merged["routers"]["fluxer"]) == (entrypoint == "websecure")
     for entrypoint in ("websecure", "web"):
-        result = render("fluxer.example.com", entrypoint, "hotdog.example.com")
+        result = render("fluxer.example.com", entrypoint, "hotdog.example.com", "lamp.example.com")
         assert result.returncode == 0, result.stderr
         merged = json.loads(result.stdout)["http"]
         assert merged["routers"]["hotdog"]["rule"] == "Host(`hotdog.example.com`)"
@@ -48,11 +48,19 @@ with tempfile.TemporaryDirectory() as directory:
         assert merged["services"]["hotdog-service"]["loadBalancer"]["servers"] == [
             {"url": "http://basm-hotdog-lamp:80"}
         ]
+        assert merged["routers"]["lamp"]["rule"] == "Host(`lamp.example.com`)"
+        assert merged["routers"]["lamp"]["entryPoints"] == [entrypoint]
+        assert ("tls" in merged["routers"]["lamp"]) == (entrypoint == "websecure")
+        assert merged["services"]["lamp-service"]["loadBalancer"]["servers"] == [
+            {"url": "http://basm-website-lamp:80"}
+        ]
     for invalid in [
         '{"http": {"routers": {"home": {}}}}',
         '{"http": {"services": {"home": {}}}}',
         '{"http": {"routers": {"fluxer": {}}}}',
         '{"http": {"routers": {"hotdog": {}}}}',
+        '{"http": {"routers": {"lamp": {}}}}',
+        '{"http": {"services": {"lamp-service": {}}}}',
         '{"tcp": {}}', '{"http": null}', '{"http": {"routers": []}}',
         '{"http": {"routers": {"broken": null}}}',
         'http:\n  routers: {}\n  routers: {}\n',
@@ -62,6 +70,7 @@ with tempfile.TemporaryDirectory() as directory:
             "fluxer.example.com",
             "websecure",
             "hotdog.example.com" if '"hotdog"' in invalid else "",
+            "lamp.example.com" if '"lamp"' in invalid or '"lamp-service"' in invalid else "",
         )
         assert result.returncode != 0 and not result.stdout and result.stderr, invalid
 print("Custom route merging, existing routes, TLS and invalid/conflicting configuration passed.")

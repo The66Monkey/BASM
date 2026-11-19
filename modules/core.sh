@@ -585,15 +585,18 @@ configure_local_mode() {
 }
 
 render_homepage() {
-  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer="" hotdog="" lamp=""
+  local destination="${BASM_RENDER_DIR:-$BASM_ROOT}" scheme=https port="$HTTPS_PORT" fluxer="" hotdog="" lamp="" lamp_domain=""
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then scheme=http; port="$HTTP_PORT"; fi
   if module_selected fluxer; then fluxer="$FLUXER_DOMAIN"; fi
   if module_selected hotdog; then hotdog="hotdog.$PRIMARY_DOMAIN"; fi
-  if module_selected lamp; then lamp="${MANAGEMENT_BIND_ADDRESS:-127.0.0.1}"; fi
+  if module_selected lamp; then
+    lamp="${MANAGEMENT_BIND_ADDRESS:-127.0.0.1}"
+    if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then lamp_domain="lamp.$PRIMARY_DOMAIN"; fi
+  fi
   install -d -m 755 "$destination/home" || return
   install -m 644 "$ROOT_DIR/docs/images/mascot.png" "$destination/home/mascot.png" || return
   /usr/bin/python3 "$ROOT_DIR/templates/render-homepage.py" "$ROOT_DIR/templates/home.html" \
-    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" "$hotdog" "$lamp" "${LAMP_PORT:-8080}" \
+    "$COMPANY_NAME" "$scheme" "$port" "$ERP_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME" "$fluxer" "$hotdog" "$lamp" "${LAMP_PORT:-8080}" "$lamp_domain" \
     > "$destination/home/index.html" || return
   chmod 644 "$destination/home/index.html"
 }
@@ -601,7 +604,7 @@ render_homepage() {
 render_stack() {
   local proxy_template="$ROOT_DIR/templates/traefik.yml"
   local fluxer_entrypoint=websecure fluxer_domain=""
-  local hotdog_domain=""
+  local hotdog_domain="" lamp_domain=""
   local destination="${BASM_RENDER_DIR:-$BASM_ROOT}"
   local compose_variables='${BASM_ROOT} ${BIND_ADDRESS} ${HTTP_PORT} ${HTTPS_PORT} ${BASM_CONTAINER_PREFIX} ${SMTP_BIND_ADDRESS} ${SMTP_PORT} ${WEB_PROTOCOL} ${BACKUP_LOCATION} ${NEXTCLOUD_TRUSTED_DOMAINS} ${MAILBOX_BIND_ADDRESS} ${MAILBOX_SETUP_BIND_ADDRESS} ${MAILBOX_SETUP_PORT} ${MAILBOX_SUBMISSION_PORT} ${MAILBOX_IMAPS_PORT} ${MAILBOX_HOSTNAME} ${ERP_IMAGE}'
   export BASM_ROOT PRIMARY_DOMAIN ERP_URL MAIL_URL CLOUD_URL MAILBOX_HOSTNAME
@@ -629,11 +632,14 @@ render_stack() {
   if module_selected hotdog; then
     hotdog_domain="hotdog.$PRIMARY_DOMAIN"
   fi
+  if module_selected lamp && [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+    lamp_domain="lamp.$PRIMARY_DOMAIN"
+  fi
   envsubst "$compose_variables" < "$ROOT_DIR/templates/docker-compose.yml" > "$destination/docker-compose.yml" || return
   if [[ "${DEPLOYMENT_MODE:-production}" == local ]]; then fluxer_entrypoint=web; fi
   envsubst '${PRIMARY_DOMAIN} ${ERP_URL} ${MAIL_URL} ${CLOUD_URL} ${BIND_ADDRESS} ${HTTPS_PORT} ${MAILBOX_HOSTNAME}' \
     < "$proxy_template" |
-    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" "$hotdog_domain" \
+    /usr/bin/python3 "$ROOT_DIR/templates/render-routes.py" "$fluxer_domain" "$FLUXER_PROXY_PORT" "$fluxer_entrypoint" "$BASM_ROOT/config/traefik-custom.yml" "$hotdog_domain" "$lamp_domain" \
       > "$destination/config/traefik.yml" || return
   local TRAEFIK_TRUSTED_IPS='[]'
   if [[ -f "$BASM_ROOT/config/traefik-edge-ip" ]]; then
@@ -739,6 +745,9 @@ review_wizard() {
   fi
   if module_selected hotdog; then
     printf 'HotDog website: https://hotdog.%s.\n' "$PRIMARY_DOMAIN"
+  fi
+  if module_selected lamp && [[ "$DEPLOYMENT_MODE" != local ]]; then
+    printf 'LAMP website: https://lamp.%s (public website; no login is added).\n' "$PRIMARY_DOMAIN"
   fi
   printf '\nAccept to save these settings and begin installation.\n'
   local answer
@@ -1157,6 +1166,7 @@ configure_system() {
     local -a service_hosts=("$ERP_URL" "$MAIL_URL" "$CLOUD_URL" "$MAILBOX_HOSTNAME")
     module_selected fluxer && service_hosts+=("$FLUXER_DOMAIN")
     module_selected hotdog && service_hosts+=("hotdog.$PRIMARY_DOMAIN")
+    module_selected lamp && service_hosts+=("lamp.$PRIMARY_DOMAIN")
     for host in "${service_hosts[@]}"; do
       if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
         warn "DNS for $host does not resolve yet; public routes and TLS issuance will not be ready."
@@ -1608,7 +1618,12 @@ port_summary() {
   if [[ "$host" == 0.0.0.0 ]]; then host="$PRIMARY_DOMAIN"; fi
   for module_name in ${BASM_MODULES:-basm}; do
     case "$module_name" in
-      lamp) printf 'LAMP: http://%s:%s (private management listener)\n' "${MANAGEMENT_BIND_ADDRESS:-$host}" "$LAMP_PORT" ;;
+      lamp)
+        if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+          printf 'LAMP website: https://lamp.%s:%s\n' "$PRIMARY_DOMAIN" "$HTTPS_PORT"
+        fi
+        printf 'LAMP: http://%s:%s (private management listener)\n' "${MANAGEMENT_BIND_ADDRESS:-$host}" "$LAMP_PORT"
+        ;;
       uptime-kuma) printf 'Uptime Kuma: http://%s:%s (private management listener)\n' "${MANAGEMENT_BIND_ADDRESS:-$host}" "$UPTIME_KUMA_PORT" ;;
       wireguard) printf 'WireGuard: %s/udp (server and peer1 configs in %s/modules/wireguard; not started)\n' "$WIREGUARD_PORT" "$BASM_ROOT" ;;
       rustdesk)
@@ -1677,6 +1692,7 @@ Core hostnames (A)
   ${mail_sub:-@}    A      PUBLIC_IP   (Mail alias; redirects to $mailbox_host)
 $(if module_selected fluxer; then printf '  %-17s A      PUBLIC_IP   (Fluxer chat: %s)\n' "${fluxer_sub:-@}" "$FLUXER_DOMAIN"; fi)
 $(if module_selected hotdog; then printf '  %-17s A      PUBLIC_IP   (HotDog CMS website)\n' "$hotdog_sub"; fi)
+$(if module_selected lamp && [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then printf '  lamp              A      PUBLIC_IP   (LAMP website)\n'; fi)
   mx                A      PUBLIC_IP   (mail server: $mailbox_host)
   autoconfig        CNAME  $mailbox_host.
   autodiscover      CNAME  $mailbox_host.
@@ -1722,6 +1738,7 @@ BODY="\$(cat <<DNSJSON
  {"subname":"$mail_sub","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
 $(if module_selected fluxer; then printf ' {"subname":"%s","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$fluxer_sub" "$a_ttl"; fi)
 $(if module_selected hotdog; then printf ' {"subname":"%s","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$hotdog_sub" "$a_ttl"; fi)
+$(if module_selected lamp && [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then printf ' {"subname":"lamp","type":"A","ttl":%s,"records":["$PUBLIC_IP"]},\n' "$a_ttl"; fi)
  {"subname":"mx","type":"A","ttl":$a_ttl,"records":["\$PUBLIC_IP"]},
  {"subname":"autoconfig","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
  {"subname":"autodiscover","type":"CNAME","ttl":3600,"records":["$mailbox_host."]},
@@ -1881,7 +1898,11 @@ IT must record its login details securely and create named accounts for users.
 EOF
   fi
   if module_selected lamp; then
-    printf 'Website (LAMP): http://%s:%s - private listener; no login is created.\n' "$MANAGEMENT_BIND_ADDRESS" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
+    if [[ "${DEPLOYMENT_MODE:-production}" != local ]]; then
+      printf 'Website (LAMP): https://lamp.%s:%s - no login is created.\n' "$PRIMARY_DOMAIN" "$HTTPS_PORT" >> "$handover_dir/for-the-user.txt"
+    else
+      printf 'Website (LAMP): http://%s:%s - private listener; no login is created.\n' "$MANAGEMENT_BIND_ADDRESS" "$LAMP_PORT" >> "$handover_dir/for-the-user.txt"
+    fi
   fi
   if module_selected wireguard; then
     cat >> "$handover_dir/for-the-user.txt" <<EOF
@@ -2030,6 +2051,7 @@ command that creates them. The A records point to the public IPv4 for:
   $CLOUD_URL
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 $(if module_selected hotdog; then printf '  hotdog.%s\n' "$PRIMARY_DOMAIN"; fi)
+$(if module_selected lamp; then printf '  lamp.%s\n' "$PRIMARY_DOMAIN"; fi)
   mx.$PRIMARY_DOMAIN
 $(if module_selected fluxer; then printf '  %s\n' "$FLUXER_DOMAIN"; fi)
 Use DNS-only records, not a CDN proxy, during setup. Do not publish AAAA records
@@ -2068,8 +2090,9 @@ Do not disable the firewall. Docker-published ports can bypass UFW rules;
 verify reachability and filtering from outside the network.
 Do not forward databases, Redis, Docker, monitoring, or router administration.
 Do not forward SSH ($SSH_PORT) by default. Prefer a configured VPN for support.
-LAMP and Uptime Kuma have no BASM-managed TLS or access control; keep their
-ports private and restrict them on the host as well as at the router.
+LAMP's selected production website is public at https://lamp.$PRIMARY_DOMAIN:$HTTPS_PORT
+with managed TLS; BASM does not add application authentication.
+Keep the direct LAMP HTTP and Uptime Kuma ports private.
 $(if module_selected fluxer; then printf 'Fluxer voice requires TCP %s and UDP %s forwarded to the server for calls.\n' "$FLUXER_VOICE_TCP_PORT" "$FLUXER_VOICE_UDP_PORT"; fi)
 
 5. FINISH MAIL SETUP
@@ -2269,6 +2292,7 @@ URLs:
 - Email administration: https://$MAILBOX_HOSTNAME:$HTTPS_PORT/admin
 - Mail server: $MAILBOX_HOSTNAME
 - Cloud: https://$CLOUD_URL:$HTTPS_PORT
+$(if module_selected lamp; then printf '%s\n' "- LAMP website: https://lamp.$PRIMARY_DOMAIN:$HTTPS_PORT"; fi)
 $(if module_selected hotdog; then printf '%s\n' "- HotDog website: https://hotdog.$PRIMARY_DOMAIN:$HTTPS_PORT"; fi)
 
 Initial login details:

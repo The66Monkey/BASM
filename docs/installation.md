@@ -332,6 +332,10 @@ Optional modules: Fluxer, RustDesk, LAMP, and Uptime Kuma are started
 automatically when selected (each as its own Compose project named
 `<prefix>-lamp` / `<prefix>-uptime-kuma`).
 LAMP serves `<BASM_ROOT>/modules/lamp/www`, seeded with a placeholder page.
+In production, its start-page card opens `https://lamp.<domain>` through
+Traefik with managed TLS, using the selected HTTPS port. Publish the generated
+`lamp` A record; dynamic-IP updates include it. This website has no BASM-added
+login. Its direct HTTP listener remains private, and local-mode access is unchanged.
 WireGuard generates a server config and a `peer1.conf` client config with fresh
 keys (mode `0600`, kept on reruns) but does not start a VPN server. Fluxer is
 not available in local mode because it requires production HTTPS and

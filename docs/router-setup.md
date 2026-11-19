@@ -165,8 +165,8 @@ for HTTPS, private DNS, VPN records and optional device-specific examples.
 
 Do not expose SSH by default. Prefer a configured VPN for remote administration.
 WireGuard is not started automatically; only after IT has enabled it should
-its selected UDP port (normally 51820) be forwarded. Keep LAMP and Uptime Kuma
-private, and never forward database or Docker ports.
+its selected UDP port (normally 51820) be forwarded. Keep the direct LAMP HTTP
+and Uptime Kuma ports private, and never forward database or Docker ports.
 
 SSH access is limited to key-based authentication with the standard Debian
 configuration; the installer does not modify SSH settings.
@@ -176,3 +176,6 @@ tunnels, or explicitly configure a private LAN `MANAGEMENT_BIND_ADDRESS`.
 Existing module bindings are not changed until those modules are regenerated.
 Public ERP, cloud and mail routes remain public; BASM does not copy DEN's
 private-home-app firewall policy onto a business server.
+Selected production LAMP sites use `https://lamp.<domain>` through the existing
+HTTPS port. Publish its generated A record and forward the hostname through any
+separate HTTPS edge; no additional router port is needed.

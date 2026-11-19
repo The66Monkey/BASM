@@ -302,10 +302,13 @@ grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
         if [[ "${DDNS_FAIL_LOOKUPS:-no}" == yes ]]; then printf 'invalid'; else printf 'not-an-ip'; fi
         ;;
       *checkip.amazonaws.com*)
-        if [[ "${DDNS_FAIL_LOOKUPS:-no}" == yes ]]; then printf '999.0.0.1'; else printf '203.0.113.7'; fi
+        if [[ "${DDNS_FAIL_LOOKUPS:-no}" == yes ]]; then printf '999.0.0.1'; else printf '%s' "${DDNS_PUBLIC_IP:-203.0.113.7}"; fi
         ;;
       *)
-        { cat; printf '%s\n' "$*"; } > "$TEST_DIR/curl-request"
+        { cat; printf '%s\n' "$*"; } >> "$TEST_DIR/curl-request"
+        if [[ "${DDNS_FAIL_UPDATE:-no}" == yes && "$*" == *'hostname=additional.example&'* ]]; then
+          return 1
+        fi
         ;;
     esac
   }
@@ -313,16 +316,50 @@ grep -Fqx 'DESEC_TOKEN="abcdefghijklmnopqrstuvwxyz12"' "$BASM_ENV_FILE"
   export TEST_DIR
   install_ddns_updater
   grep -Fq "17 */4 * * * root /bin/bash \"$BASM_ROOT/maintenance/ddns-update.sh\" \"$BASM_ROOT\"" "$(ddns_cron_file "$BASM_ROOT")"
-  [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
+  [[ "$(sed -n '1p' "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
   grep -Fq 'Authorization: Token abcdefghijklmnopqrstuvwxyz12' "$TEST_DIR/curl-request"
-  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,hotdog.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
+  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,hotdog.business.example,lamp.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.7' "$TEST_DIR/curl-request"
+  printf '203.0.113.7\n' > "$BASM_ROOT/config/last-public-ip"
+  : > "$TEST_DIR/curl-request"
+  bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"
+  [[ -s "$TEST_DIR/curl-request" ]]
+  cp "$BASM_ROOT/config/last-public-ip" "$TEST_DIR/ddns-state"
+  printf 'additional.example\nadditional.example\n' > "$BASM_ROOT/config/ddns-extra-hostnames"
+  export DDNS_FAIL_UPDATE=yes
+  if bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"; then
+    printf 'DDNS updater ignored an extra-hostname update failure.\n' >&2
+    exit 1
+  fi
+  cmp "$BASM_ROOT/config/last-public-ip" "$TEST_DIR/ddns-state"
+  unset DDNS_FAIL_UPDATE
+  : > "$TEST_DIR/curl-request"
+  bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"
+  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,hotdog.business.example,lamp.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.7&myipv6=preserve' "$TEST_DIR/curl-request"
+  [[ "$(grep -Fc 'hostname=additional.example&myipv4=203.0.113.7&myipv6=preserve' "$TEST_DIR/curl-request")" == 1 ]]
+  grep -Fq ',additional.example' "$BASM_ROOT/config/last-public-ip"
+  : > "$TEST_DIR/curl-request"
+  bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"
+  [[ ! -s "$TEST_DIR/curl-request" ]]
+  export DDNS_PUBLIC_IP=203.0.113.8
+  bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"
+  grep -Fq 'hostname=business.example,cloud.business.example,erp.business.example,hotdog.business.example,lamp.business.example,mail.business.example,mx.business.example&myipv4=203.0.113.8&myipv6=preserve' "$TEST_DIR/curl-request"
+  grep -Fq 'hostname=additional.example&myipv4=203.0.113.8&myipv6=preserve' "$TEST_DIR/curl-request"
+  [[ "$(sed -n '1p' "$BASM_ROOT/config/last-public-ip")" == 203.0.113.8 ]]
+  : > "$TEST_DIR/curl-request"
+  printf 'additional.example&myipv6=\n' > "$BASM_ROOT/config/ddns-extra-hostnames"
+  if bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"; then
+    printf 'DDNS updater accepted an invalid extra hostname.\n' >&2
+    exit 1
+  fi
+  [[ ! -s "$TEST_DIR/curl-request" ]]
+  rm "$BASM_ROOT/config/ddns-extra-hostnames"
   export DDNS_FAIL_LOOKUPS=yes
   if bash "$BASM_ROOT/maintenance/ddns-update.sh" "$BASM_ROOT"; then
     printf 'DDNS updater accepted invalid IPv4 lookup responses.\n' >&2
     exit 1
   fi
-  [[ "$(< "$BASM_ROOT/config/last-public-ip")" == 203.0.113.7 ]]
-  unset DDNS_FAIL_LOOKUPS
+  [[ "$(sed -n '1p' "$BASM_ROOT/config/last-public-ip")" == 203.0.113.8 ]]
+  unset DDNS_FAIL_LOOKUPS DDNS_PUBLIC_IP
   IP_MODE=static install_ddns_updater
   [[ ! -e "$(ddns_cron_file "$BASM_ROOT")" && ! -e "$BASM_ROOT/maintenance/ddns-update.sh" ]]
 )

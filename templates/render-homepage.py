@@ -6,7 +6,7 @@ import sys
 
 
 def render(template, company, scheme, port, erp, cloud, mail, fluxer, hotdog="",
-           lamp_host="", lamp_port="8080"):
+           lamp_host="", lamp_port="8080", lamp_domain=""):
     suffix = "" if (scheme, port) in {("https", "443"), ("http", "80")} else f":{port}"
     services = [(erp, "ERPNext - Business", "erpnext", "E"),
                 (cloud, "Nextcloud - Files", "nextcloud", "N"),
@@ -18,7 +18,9 @@ def render(template, company, scheme, port, erp, cloud, mail, fluxer, hotdog="",
     services = [(f"{scheme}://{host}{suffix}/", label, mark, symbol)
                 for host, label, mark, symbol in services]
     lamp_access = ""
-    if lamp_host:
+    if lamp_domain:
+        services.append((f"{scheme}://{lamp_domain}{suffix}/", "LAMP - Website", "lamp", "L"))
+    elif lamp_host:
         host = "localhost" if lamp_host in {"127.0.0.1", "localhost"} else lamp_host
         services.append((f"http://{host}:{lamp_port}/", "LAMP - Website (private)", "lamp", "L"))
         if host == "localhost":

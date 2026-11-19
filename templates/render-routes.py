@@ -26,6 +26,7 @@ if __name__ == "__main__":
     config = yaml.load(sys.stdin, Loader=UniqueLoader)
     domain, port, entrypoint = sys.argv[1:4]
     hotdog_domain = sys.argv[5] if len(sys.argv) > 5 else ""
+    lamp_domain = sys.argv[6] if len(sys.argv) > 6 else ""
     if domain:
         router = {
             "rule": f"Host(`{domain}`)",
@@ -38,16 +39,21 @@ if __name__ == "__main__":
         config["http"]["services"]["fluxer-service"] = {
             "loadBalancer": {"servers": [{"url": f"http://host.docker.internal:{port}"}]}
         }
-    if hotdog_domain:
-        config["http"]["routers"]["hotdog"] = {
-            "rule": f"Host(`{hotdog_domain}`)",
-            "service": "hotdog-service",
-            "entryPoints": ["websecure" if entrypoint == "websecure" else "web"],
+    for name, hostname, backend in [
+        ("hotdog", hotdog_domain, "basm-hotdog-lamp"),
+        ("lamp", lamp_domain, "basm-website-lamp"),
+    ]:
+        if not hostname:
+            continue
+        config["http"]["routers"][name] = {
+            "rule": f"Host(`{hostname}`)",
+            "service": f"{name}-service",
+            "entryPoints": [entrypoint],
         }
         if entrypoint == "websecure":
-            config["http"]["routers"]["hotdog"]["tls"] = {"certResolver": "letsencrypt"}
-        config["http"]["services"]["hotdog-service"] = {
-            "loadBalancer": {"servers": [{"url": "http://basm-hotdog-lamp:80"}]}
+            config["http"]["routers"][name]["tls"] = {"certResolver": "letsencrypt"}
+        config["http"]["services"][f"{name}-service"] = {
+            "loadBalancer": {"servers": [{"url": f"http://{backend}:80"}]}
         }
     if len(sys.argv) > 4 and Path(sys.argv[4]).exists():
         with open(sys.argv[4]) as source:

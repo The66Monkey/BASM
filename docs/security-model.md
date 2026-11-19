@@ -45,6 +45,8 @@ preserved when regenerating handovers.
 - Production LAMP and Uptime Kuma default to loopback; explicitly configured
   management addresses must be private IPv4. Existing modules change binding
   only when their configuration is regenerated.
+- Selected production LAMP sites also have a public `lamp.<domain>` HTTPS
+  route with managed TLS. BASM adds no application authentication to that site.
 - WireGuard only generates configuration; it does not start a VPN server.
 
 ## Backups and updates

@@ -20,7 +20,7 @@ for variable in DB_ROOT_PASSWORD ERP_ADMIN_PASSWORD NEXTCLOUD_ADMIN_PASSWORD NEX
   printf -v "$variable" '%s' test-only-placeholder
   export "$variable"
 done
-for modules in 'basm' 'basm fluxer' 'basm lamp hotdog'; do
+for modules in 'basm' 'basm fluxer' 'basm lamp' 'basm lamp hotdog'; do
   BASM_MODULES="$modules"
   ensure_port_defaults
   write_env_file
@@ -48,6 +48,8 @@ if "fluxer" in modules.split():
     expected.add("fluxer")
 if "hotdog" in modules.split():
     expected.add("hotdog")
+if "lamp" in modules.split():
+    expected.add("lamp")
 assert set(http["routers"]) == expected, (set(http["routers"]), expected)
 for router in http["routers"].values():
     assert router["service"] in http["services"] or router["service"] == "noop@internal"
@@ -100,6 +102,12 @@ assert f"{mailbox_bind}:{submission_port}:465" in services["stalwart-mail"]["por
 assert f"{mailbox_bind}:{imaps_port}:993" in services["stalwart-mail"]["ports"], services["stalwart-mail"]["ports"]
 assert config["http"]["routers"]["home"]["rule"] == "Host(`example.com`)"
 assert config["http"]["services"]["home-service"]["loadBalancer"]["servers"] == [{"url": "http://homepage:80"}]
+if "lamp" in modules.split():
+    assert http["routers"]["lamp"]["rule"] == "Host(`lamp.example.com`)"
+    assert http["routers"]["lamp"]["tls"] == {"certResolver": "letsencrypt"}
+    assert http["services"]["lamp-service"]["loadBalancer"]["servers"] == [
+        {"url": "http://basm-website-lamp:80"}
+    ]
 if "hotdog" in modules.split():
     assert config["http"]["routers"]["hotdog"]["rule"] == "Host(`hotdog.example.com`)"
     assert config["http"]["services"]["hotdog-service"]["loadBalancer"]["servers"] == [
